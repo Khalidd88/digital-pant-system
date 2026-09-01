@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  WARGA
+  WARUNG
+}
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  role      UserRole  @default(WARGA)
+  qrId      String    @unique
+  balance   Int       @default(0)
+  createdAt DateTime  @default(now())
+  scanLogs  ScanLog[]
+
+  @@map("users")
+}
+
+model ScanLog {
+  id           String   @id @default(uuid())
+  userId       String
+  material     String
+  depositValue Int
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("scan_logs")
+}
