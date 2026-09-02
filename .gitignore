@@ -1,10 +1,18 @@
-node_modules/
-dist/
-build/
-.next/
-out/
-.env
-.env.local
-.DS_Store
-*.db
-*.db-journal
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# ML/AI Models & Datasets (Cegah file >100MB masuk Git)
+*.pt
+*.pth
+*.onnx
+*.h5
+*.tflite
+*.bin
+*.pkl
+datasets/
+runs/

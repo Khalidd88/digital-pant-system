@@ -9,24 +9,29 @@ export interface User {
   createdAt: string;
 }
 
-export type BottleMaterial = 'PET_PLASTIC' | 'ALUMINUM_CAN' | 'GLASS_BOTTLE';
+// Disamakan dengan controller backend: PLASTIC_PET
+export type BottleMaterial = 'PLASTIC_PET' | 'ALUMINUM_CAN' | 'GLASS_BOTTLE';
 
 export interface ScanVerificationPayload {
   qrId: string;
   material: BottleMaterial;
-  depositValue: number;
+  depositValue?: number;
 }
 
+// Disamakan dengan output riil controller scan backend
 export interface ScanVerificationResponse {
   success: boolean;
   message: string;
   data: {
-    qrId: string;
-    userName: string;
-    newBalance: number;
-    creditedAmount: number;
-    material: string;
     scanId: string;
+    user: {
+      name: string;
+      qrId: string;
+      previousBalance: number;
+      newBalance: number;
+      addedBalance: number;
+    };
+    material: string;
     timestamp: string;
   };
 }
