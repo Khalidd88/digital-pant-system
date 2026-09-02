@@ -54,7 +54,6 @@ Tingkat daur ulang sampah botol plastik di wilayah urban Indonesia masih terhamb
 * Akun PostgreSQL / Supabase aktif
 
 ### 2. Kloning Repositori & Instalasi Dependensi
-```bash
 git clone [https://github.com/Khalidd88/digital-pant-system.git](https://github.com/Khalidd88/digital-pant-system.git)
 cd digital-pant-system
 
