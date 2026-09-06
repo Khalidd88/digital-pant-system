@@ -64,8 +64,26 @@ Solusi konvensional global berupa *Reverse Vending Machine* (RVM) fisik memang e
 | :---: | :---: | :---: |
 | ![Dashboard Warga](https://via.placeholder.com/400x240?text=Dashboard+Warga) | ![Scanner Warung](https://via.placeholder.com/400x240?text=Scanner+Warung) | ![Impact Analytics](https://via.placeholder.com/400x240?text=Impact+Analytics) |
 
-* 🔗 **Live Demo Web:** [pantra.vercel.app](https://pantra.vercel.app) *(Link live deployment)*
+* 🔗 **Live Demo Web:** [pantra-inky.vercel.app](https://pantra-inky.vercel.app) *(Link live deployment)*
 * 🔗 **Video Walkthrough:** [Tautan YouTube](https://youtube.com) *(Demo alur pengujian)*
+
+### Akun Demo
+
+Gunakan kredensial berikut untuk mencoba aplikasi pada deployment Vercel:
+
+| Peran | Email | Password |
+| :--- | :--- | :--- |
+| Warung Mitra | `handuk@example.com` | `12345678` |
+| Warga | `sans@example.com` | `12345678` |
+
+### Membuat Akun Baru
+
+Pengguna juga dapat membuat akun baru melalui halaman registrasi pada aplikasi:
+
+* **Warga:** pilih **Daftar Warga Baru** pada halaman login warga.
+* **Warung Mitra:** pilih **Daftar dulu** pada halaman login mitra warung, lalu lengkapi proses verifikasi dokumen jika diminta.
+
+Akun baru akan tersimpan pada database dan dapat digunakan untuk login setelah proses registrasi berhasil.
 
 ---
 
