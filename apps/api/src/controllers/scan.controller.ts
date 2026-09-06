@@ -1,89 +1,87 @@
-import { Request, Response } from 'express';
-import { prisma } from '../lib/prisma';
+import type { Request, Response as ExpressResponse } from "express";
+import { spawn } from "bun";
+import path from "path";
+import fs from "fs";
 
-export const verifyBottleScan = async (req: Request, res: Response): Promise<void> => {
+export const detectBottleQuality = async (req: Request, res: ExpressResponse): Promise<void> => {
   try {
-    const { qrId, userQrId, material, depositValue, bottleCount } = req.body;
-    const targetQrId = qrId || userQrId;
+    const { imageBase64 } = req.body;
 
-    if (!targetQrId || !material) {
-      res.status(400).json({
-        success: false,
-        message: 'Payload tidak lengkap: qrId dan material wajib diisi'
-      });
+    if (!imageBase64) {
+      res.status(400).json({ success: false, message: "Frame kamera (base64) wajib dikirim" });
       return;
     }
 
-    // 1. Hitung jumlah botol (default 1 jika tidak dikirim)
-    const count = Math.max(1, parseInt(String(bottleCount || 1), 10));
+    // 1. Simpan frame gambar sementara
+    const tempDir = path.resolve(__dirname, "../../temp");
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
-    // 2. Standarisasi tarif botol (Rp500 / botol untuk PET)
-    const matUpper = String(material).trim().toUpperCase();
-    const ratePerBottle =
-      depositValue !== undefined
-        ? Number(depositValue)
-        : (matUpper.includes('PET') || matUpper.includes('PLASTIC') ? 500 : 500);
+    const tempFilePath = path.join(tempDir, `scan-${Date.now()}.jpg`);
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+    fs.writeFileSync(tempFilePath, Buffer.from(cleanBase64, "base64"));
 
-    const totalDeposit = ratePerBottle * count;
+    // 2. Path eksekusi Python venv dan predict.py
+    const pythonBin = path.resolve(__dirname, "../ml/venv/bin/python");
+    const scriptPath = path.resolve(__dirname, "../ml/predict.py");
 
-    // 3. Cari user warga
-    const user = await prisma.user.findUnique({
-      where: { qrId: targetQrId }
+    if (!fs.existsSync(pythonBin)) {
+      console.error("❌ Python venv tidak ditemukan di:", pythonBin);
+      res.status(500).json({ success: false, message: `Python venv tidak ditemukan: ${pythonBin}` });
+      return;
+    }
+
+    if (!fs.existsSync(scriptPath)) {
+      console.error("❌ predict.py tidak ditemukan di:", scriptPath);
+      res.status(500).json({ success: false, message: `predict.py tidak ditemukan: ${scriptPath}` });
+      return;
+    }
+
+    // 3. Eksekusi proses Python
+    const proc = spawn([pythonBin, scriptPath, tempFilePath], {
+      stdout: "pipe",
+      stderr: "pipe",
     });
 
-    if (!user) {
-      res.status(404).json({
-        success: false,
-        message: `User dengan QR ID ${targetQrId} tidak ditemukan`
-      });
-      return;
-    }
-
-    // 4. Eksekusi atomic transaction: Simpan scan log + tambah saldo warga
-    const [scanLog, updatedUser] = await prisma.$transaction([
-      prisma.scanLog.create({
-        data: {
-          userId: user.id,
-          material: matUpper,
-          depositValue: totalDeposit
-        }
-      }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: {
-          balance: {
-            increment: totalDeposit
-          }
-        }
-      })
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
     ]);
 
-    res.status(200).json({
-      success: true,
-      message: `Verifikasi ${count} botol berhasil, saldo bertambah Rp${totalDeposit.toLocaleString('id-ID')}!`,
-      data: {
-        scanId: scanLog.id,
-        user: {
-          name: updatedUser.name,
-          qrId: updatedUser.qrId,
-          previousBalance: user.balance,
-          newBalance: updatedUser.balance,
-          addedBalance: totalDeposit
-        },
-        bottleCount: count,
-        ratePerBottle: ratePerBottle,
-        material: scanLog.material,
-        timestamp: scanLog.createdAt
+    await proc.exited;
+
+    // Bersihkan file sementara
+    if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+
+    if (stderr && stderr.trim()) {
+      console.warn("⚠️ Python stderr:", stderr.trim());
+    }
+
+    // 4. Ekstrak baris JSON murni (mengabaikan banner/log Ultralytics)
+    const lines = stdout.trim().split("\n");
+    let parsedResult = null;
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const potentialJson = lines[i].trim();
+        if (potentialJson.startsWith("{") && potentialJson.endsWith("}")) {
+          parsedResult = JSON.parse(potentialJson);
+          break;
+        }
+      } catch {
+        // Lewati jika bukan baris JSON
       }
-    });
+    }
+
+    if (!parsedResult) {
+      console.error("❌ Output stdout tidak berisi JSON valid:\n", stdout);
+      res.status(500).json({ success: false, message: "Output Python bukan format JSON", raw: stdout });
+      return;
+    }
+
+    console.log("✅ Deteksi Sukses:", parsedResult);
+    res.status(200).json(parsedResult);
   } catch (error: any) {
-    console.error('Scan verify error details:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Gagal memproses transaksi scan',
-      error: error?.message || String(error)
-    });
+    console.error("❌ Controller Error:", error);
+    res.status(500).json({ success: false, message: error.message || "Gagal memproses YOLO" });
   }
 };
-
-export const verifyScan = verifyBottleScan;
