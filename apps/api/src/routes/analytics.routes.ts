@@ -1,10 +1,10 @@
 import { Router } from 'express';
 const router = Router();
 
-router.post('/withdraw', (req, res) => {
+router.get('/impact', (req, res) => {
   res.json({
     success: true,
-    message: "Permintaan pencairan kas berhasil diproses.",
+    data: { totalBottles: 1420, co2SavedKg: 28.4, activeWarga: 84 },
   });
 });
 
