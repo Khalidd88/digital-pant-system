@@ -84,7 +84,7 @@ export default function PantraAssistantPage() {
     let activeQr = "USR-8821";
 
     try {
-      const savedUserStr = localStorage.getItem("pantra_user");
+      const savedUserStr = localStorage.getItem("pantra_user") || sessionStorage.getItem("pantra_user");
       if (savedUserStr) {
         const userObj = JSON.parse(savedUserStr);
         if (userObj.fullName) activeName = userObj.fullName;
@@ -94,7 +94,7 @@ export default function PantraAssistantPage() {
       }
 
       // Cek cadangan key qr di storage
-      const directQr = localStorage.getItem("pantra_user_qr");
+      const directQr = localStorage.getItem("pantra_user_qr") || sessionStorage.getItem("pantra_user_qr");
       if (directQr) activeQr = directQr;
     } catch (e) {
       console.error("Gagal baca storage user:", e);
@@ -132,7 +132,7 @@ export default function PantraAssistantPage() {
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isTyping) return;
 
-    const currentQr = (typeof window !== "undefined" && localStorage.getItem("pantra_user_qr")) || qrId || "USR-8821";
+    const currentQr = (typeof window !== "undefined" && (localStorage.getItem("pantra_user_qr") || sessionStorage.getItem("pantra_user_qr"))) || qrId || "USR-8821";
     const userText = text.trim();
     
     const newUserMsg: ChatMessage = {

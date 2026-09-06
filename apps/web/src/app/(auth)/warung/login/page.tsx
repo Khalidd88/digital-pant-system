@@ -23,6 +23,8 @@ export default function LoginWarungPage() {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Form State
   const [formData, setFormData] = useState({
@@ -35,12 +37,46 @@ export default function LoginWarungPage() {
       ...prev,
       [e.target.name]: e.target.value,
     }));
+    if (errorMessage) setErrorMessage("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Submit Login Mitra Warung:", { ...formData, rememberMe });
-    router.push("/warung/dashboard");
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch("https://pantra-production.up.railway.app/api/auth/warung/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          email: formData.email.trim(),
+          password: formData.password,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Email atau password warung salah.");
+      }
+
+      const warung = result.data;
+      const storage = rememberMe ? localStorage : sessionStorage;
+      storage.setItem("pantra_warung_id", warung.warungId || "WRG-0001");
+      storage.setItem("pantra_warung_name", warung.name || "Warung Mitra");
+      storage.setItem("pantra_warung_user", JSON.stringify(warung));
+      storage.setItem("pantra_role", "WARUNG");
+
+      router.push("/warung/dashboard");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Gagal terhubung ke server.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -152,6 +188,12 @@ export default function LoginWarungPage() {
             Login Mitra Warung
           </h1>
 
+          {errorMessage && (
+            <div className="mb-5 p-3.5 rounded-[12px] bg-red-50 border border-red-200 text-xs font-medium text-red-600">
+              {errorMessage}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             
             {/* Field 1: Email */}
@@ -219,9 +261,10 @@ export default function LoginWarungPage() {
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full py-3.5 bg-[#52C3BF] hover:bg-teal-400 text-white font-bold text-sm rounded-[15px] transition-colors shadow-sm"
+              disabled={loading}
+              className="w-full py-3.5 bg-[#52C3BF] hover:bg-teal-400 disabled:opacity-70 text-white font-bold text-sm rounded-[15px] transition-colors shadow-sm"
             >
-              Login
+              {loading ? "Memeriksa akun..." : "Login"}
             </button>
 
           </form>

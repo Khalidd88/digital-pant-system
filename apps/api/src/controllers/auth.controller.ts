@@ -83,8 +83,11 @@ export const loginWarga = async (req: Request, res: Response): Promise<void> => 
     }
 
     // Cari user di database
-    const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() }
+    const user = await prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase().trim(),
+        role: 'WARGA'
+      }
     });
 
     if (!user) {
@@ -203,45 +206,29 @@ export const loginWarung = async (req: Request, res: Response): Promise<void> =>
   try {
     const { email, password } = req.body;
 
-    if (!email) {
-      res.status(400).json({ success: false, message: "Email wajib diisi" });
+    if (!email || !password) {
+      res.status(400).json({ success: false, message: "Email dan password wajib diisi" });
       return;
     }
 
-    // 1. Cari warung terdaftar berdasarkan email
-    let warung = await prisma.user.findFirst({
+    const warung = await prisma.user.findFirst({
       where: {
         email: email.toLowerCase().trim(),
         role: "WARUNG",
       },
     });
 
-    // 2. Fallback Demo: Jika akun belum ada di DB, ambil atau buatkan Warung Bu Tejo
     if (!warung) {
-      warung = await prisma.user.findFirst({
-        where: { role: "WARUNG" },
-      });
-
-      if (!warung) {
-        warung = await prisma.user.create({
-          data: {
-            name: "Warung Bu Tejo",
-            email: email.toLowerCase().trim(),
-            role: "WARUNG",
-            qrId: "WRG-0001",
-            balance: 250000,
-          },
-        });
-      }
+      res.status(404).json({ success: false, message: "Akun mitra warung tidak ditemukan" });
+      return;
     }
 
-    // 3. Verifikasi password jika password tersimpan di DB
-    if (password && warung.password) {
-      const isMatch = await Bun.password.verify(password, warung.password);
-      if (!isMatch) {
-        res.status(401).json({ success: false, message: "Password mitra salah" });
-        return;
-      }
+    const isMatch = warung.password
+      ? await Bun.password.verify(password, warung.password)
+      : false;
+    if (!isMatch) {
+      res.status(401).json({ success: false, message: "Password mitra salah" });
+      return;
     }
 
     res.status(200).json({

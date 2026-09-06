@@ -105,8 +105,8 @@ export default function WarungScanPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setWarungId(localStorage.getItem("pantra_warung_id") || "WRG-0001");
-      setWarungName(localStorage.getItem("pantra_warung_name") || "Warung Mitra Bu Tejo");
+      setWarungId(localStorage.getItem("pantra_warung_id") || sessionStorage.getItem("pantra_warung_id") || "WRG-0001");
+      setWarungName(localStorage.getItem("pantra_warung_name") || sessionStorage.getItem("pantra_warung_name") || "Warung Mitra Bu Tejo");
     }
   }, []);
 

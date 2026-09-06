@@ -89,8 +89,8 @@ export default function WarungDompetPage() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const savedId = localStorage.getItem("pantra_warung_id") || "WRG-0001";
-    const savedName = localStorage.getItem("pantra_warung_name") || "Warung Mitra";
+    const savedId = localStorage.getItem("pantra_warung_id") || sessionStorage.getItem("pantra_warung_id") || "WRG-0001";
+    const savedName = localStorage.getItem("pantra_warung_name") || sessionStorage.getItem("pantra_warung_name") || "Warung Mitra";
     setWarungId(savedId);
     setWarungName(savedName);
     fetchWallet(savedId);
