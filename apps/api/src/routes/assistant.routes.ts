@@ -1,11 +1,9 @@
 import { Router } from 'express';
+import { handleAssistantChat } from '../controllers/assistant.controller';
+
 const router = Router();
 
-router.post('/chat', (req, res) => {
-  res.json({
-    success: true,
-    reply: "Halo! PANTRA Assistant siap membantu seputar penukaran botol dan saldo kas warung.",
-  });
-});
+// Wajib arahkan ke handleAssistantChat agar Gemini dan Prisma dieksekusi
+router.post('/chat', handleAssistantChat);
 
 export default router;
