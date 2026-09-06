@@ -31,7 +31,6 @@ import {
 
 import vectorLogo from "@/assets/Vector.png";
 
-// URL Dinamis: Otomatis membaca env Vercel saat live atau fallback ke Railway production
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://pantra-production.up.railway.app";
 
 interface VerificationItem {
@@ -66,9 +65,9 @@ export default function WarungDashboardPage() {
   const [entriesPerPage, setEntriesPerPage] = useState<number>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Identitas Akun yang Sedang Login (Dinamis dari Session / LocalStorage)
-  const [activeUserName, setActiveUserName] = useState<string>("Mitra PANTRA");
-  const [activeUserId, setActiveUserId] = useState<string>("WRG-0001");
+  // Inisialisasi awal netral tanpa hardcode nama statis
+  const [userName, setUserName] = useState<string>("Memuat...");
+  const [userQrId, setUserQrId] = useState<string>("");
 
   const [balance, setBalance] = useState<number>(0);
   const [totalBottlesCollected, setTotalBottlesCollected] = useState<number>(0);
@@ -76,7 +75,7 @@ export default function WarungDashboardPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  // State Modal Tarik Saldo (Wizard 3 Step)
+  // Modal Tarik Saldo
   const [withdrawStep, setWithdrawStep] = useState<"nominal" | "method" | "pin" | null>(null);
   const [withdrawAmount, setWithdrawAmount] = useState<string>("");
   const [selectedWallet, setSelectedWallet] = useState<string>("gopay");
@@ -85,7 +84,7 @@ export default function WarungDashboardPage() {
   const [showPopup, setShowPopup] = useState<boolean>(false);
   const [popupMessage, setPopupMessage] = useState<string>("");
 
-  // State Modal Verifikasi Cepat (Quick Bottle Deposit for Demo)
+  // Modal Verifikasi Cepat
   const [showQuickVerifyModal, setShowQuickVerifyModal] = useState<boolean>(false);
   const [targetUserQr, setTargetUserQr] = useState<string>("USR-8921");
   const [bottleCount, setBottleCount] = useState<number>(3);
@@ -93,7 +92,6 @@ export default function WarungDashboardPage() {
   const [verifyingBottle, setVerifyingBottle] = useState<boolean>(false);
   const [verifyAlert, setVerifyAlert] = useState<string>("");
 
-  // Format Angka ke Rupiah
   const formatRupiah = (val: number | string) => {
     const num = typeof val === "string" ? parseInt(val, 10) : val;
     if (isNaN(num) || num <= 0) return "Rp0";
@@ -115,29 +113,30 @@ export default function WarungDashboardPage() {
     }
   };
 
-  // 1. Ambil Profil User, Saldo, dan Log Transaksi Realtime dari Backend
-  const fetchUserData = useCallback(async (userIdToFetch: string, silent = false) => {
-    if (!userIdToFetch) return;
+  // Sinkronisasi data saldo dan log transaksi dari backend
+  const fetchWarungData = useCallback(async (targetId: string, silent = false) => {
+    if (!targetId) return;
     if (!silent) setIsRefreshing(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/user/${userIdToFetch}`, {
-        cache: "no-store",
-      });
+      const res = await fetch(`${API_BASE_URL}/api/user/${targetId}`, { cache: "no-store" });
       const json = await res.json();
 
       if (json.success && json.data) {
         const data = json.data;
         setBalance(data.balance ?? 0);
-        
-        // Update nama dan ID resmi jika terkonfirmasi dari database
-        if (data.name) setActiveUserName(data.name);
-        if (data.qrId) setActiveUserId(data.qrId);
+
+        // Hanya gunakan nama backend jika di localStorage belum ada nama login khusus
+        setUserName((prev) => {
+          if (prev && prev !== "Memuat..." && prev !== "Mitra Warung" && prev !== "Warung Bu Tejo") {
+            return prev;
+          }
+          return data.name || "Mitra Warung";
+        });
 
         const list: VerificationItem[] = [];
         let bottlesSum = 0;
 
-        // Map data Scan Log
         if (Array.isArray(data.scanLogs)) {
           data.scanLogs.forEach((scan: any, idx: number) => {
             const count = scan.bottleCount || 1;
@@ -155,7 +154,6 @@ export default function WarungDashboardPage() {
           });
         }
 
-        // Map data penarikan saldo
         if (Array.isArray(data.walletTransactions)) {
           data.walletTransactions.forEach((tx: any, idx: number) => {
             list.push({
@@ -176,63 +174,66 @@ export default function WarungDashboardPage() {
         setTotalBottlesCollected(bottlesSum);
       }
     } catch (err) {
-      console.error("Gagal sinkron data user:", err);
+      console.error("Gagal sinkron data warung:", err);
     } finally {
       setLoading(false);
       setIsRefreshing(false);
     }
   }, []);
 
-  // Inisialisasi Dinamis: Deteksi User yang Login dari Seluruh Storage
+  // Baca identitas asli orang yang login dari browser storage
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    let detectedName = "Mitra PANTRA";
+    let detectedName = "";
     let detectedId = "";
 
-    // 1. Cek penyimpanan JSON terstruktur
+    // 1. Cek penyimpanan JSON login
     const savedUserStr = localStorage.getItem("pantra_user") || sessionStorage.getItem("pantra_user");
     if (savedUserStr) {
       try {
-        const userObj = JSON.parse(savedUserStr);
-        if (userObj.name) detectedName = userObj.name;
-        if (userObj.qrId || userObj.id) detectedId = userObj.qrId || userObj.id;
+        const u = JSON.parse(savedUserStr);
+        if (u.name) detectedName = u.name;
+        if (u.qrId || u.id) detectedId = u.qrId || u.id;
       } catch (e) {
-        console.warn("Gagal parse pantra_user:", e);
+        console.warn("Gagal parse session user:", e);
       }
     }
 
-    // 2. Cek key individual
-    const directName = 
-      localStorage.getItem("pantra_warung_name") || 
-      localStorage.getItem("pantra_user_name") || 
-      sessionStorage.getItem("pantra_warung_name");
-      
-    const directId = 
-      localStorage.getItem("pantra_warung_id") || 
-      localStorage.getItem("pantra_user_qr") || 
-      sessionStorage.getItem("pantra_warung_id");
+    // 2. Cek key individual login
+    if (!detectedName) {
+      detectedName = 
+        localStorage.getItem("pantra_warung_name") || 
+        localStorage.getItem("pantra_user_name") || 
+        sessionStorage.getItem("pantra_warung_name") || 
+        "";
+    }
 
-    if (directName) detectedName = directName;
-    if (directId) detectedId = directId;
+    if (!detectedId) {
+      detectedId = 
+        localStorage.getItem("pantra_warung_id") || 
+        localStorage.getItem("pantra_user_qr") || 
+        sessionStorage.getItem("pantra_warung_id") || 
+        "";
+    }
 
-    // Fallback default jika baru pertama kali buka browser
-    if (!detectedId) detectedId = "WRG-0001";
+    // Default aman jika belum pernah login
+    const finalName = detectedName.trim() ? detectedName : "Mitra Warung";
+    const finalId = detectedId.trim() ? detectedId : "WRG-0001";
 
-    setActiveUserName(detectedName);
-    setActiveUserId(detectedId);
+    setUserName(finalName);
+    setUserQrId(finalId);
 
-    // Ambil data pertama kali & polling otomatis tiap 5 detik
-    fetchUserData(detectedId);
+    fetchWarungData(finalId);
 
     const interval = setInterval(() => {
-      fetchUserData(detectedId, true);
+      fetchWarungData(finalId, true);
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [fetchUserData]);
+  }, [fetchWarungData]);
 
-  // Handler Numpad Virtual Mobile (Nominal Tarik Saldo)
+  // Handler Numpad & PIN
   const handleNumpadPress = (value: string) => {
     if (value === "back") {
       setWithdrawStep(null);
@@ -247,21 +248,17 @@ export default function WarungDashboardPage() {
     }
   };
 
-  // Handler PIN Virtual Numpad
   const handlePinPress = (value: string) => {
     if (value === "delete") {
       setPinCode((prev) => prev.slice(0, -1));
-    } else {
-      if (pinCode.length < 6) {
-        setPinCode((prev) => prev + value);
-      }
+    } else if (pinCode.length < 6) {
+      setPinCode((prev) => prev + value);
     }
   };
 
-  // 2. Submit Penarikan Saldo Riil ke Backend
   const handleExecuteWithdraw = async () => {
     if (pinCode.length < 4) {
-      alert("Masukkan PIN keamanan penarikan minimal 4 digit.");
+      alert("Masukkan PIN keamanan minimal 4 digit.");
       return;
     }
 
@@ -282,7 +279,7 @@ export default function WarungDashboardPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          qrId: activeUserId,
+          qrId: userQrId,
           amount: numericAmount,
           channel: selectedWallet.toUpperCase(),
           destinationNumber: "081234567890"
@@ -295,12 +292,12 @@ export default function WarungDashboardPage() {
       }
 
       setBalance(json.data.remainingBalance);
-      setPopupMessage(`Penarikan ${formatRupiah(numericAmount)} ke ${selectedWallet.toUpperCase()} berhasil diajukan dan diproses!`);
+      setPopupMessage(`Penarikan ${formatRupiah(numericAmount)} ke ${selectedWallet.toUpperCase()} berhasil diproses!`);
       setWithdrawStep(null);
       setPinCode("");
       setWithdrawAmount("");
       setShowPopup(true);
-      fetchUserData(activeUserId, true);
+      fetchWarungData(userQrId, true);
     } catch (err: any) {
       alert(err.message || "Terjadi kesalahan saat memproses penarikan.");
     } finally {
@@ -308,7 +305,6 @@ export default function WarungDashboardPage() {
     }
   };
 
-  // 3. Eksekusi Verifikasi Setoran Botol Warga Cepat (Demo Pitching Helper)
   const handleVerifyBottleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setVerifyAlert("");
@@ -327,7 +323,7 @@ export default function WarungDashboardPage() {
           userQrId: targetUserQr.trim(),
           material: materialType,
           bottleCount: Number(bottleCount),
-          warungId: activeUserId
+          warungId: userQrId
         }),
       });
 
@@ -337,11 +333,9 @@ export default function WarungDashboardPage() {
       }
 
       setShowQuickVerifyModal(false);
-      setPopupMessage(`Verifikasi Sukses! ${bottleCount}x Botol ${materialType} telah disetor oleh ${targetUserQr}. Saldo warga bertambah Rp${(json.data?.depositEarned || bottleCount * 500).toLocaleString("id-ID")}.`);
+      setPopupMessage(`Verifikasi Sukses! ${bottleCount}x Botol ${materialType} disetor oleh ${targetUserQr}.`);
       setShowPopup(true);
-
-      // Refresh data dashboard seketika
-      fetchUserData(activeUserId, true);
+      fetchWarungData(userQrId, true);
     } catch (err: any) {
       setVerifyAlert(err.message || "Gagal menghubungi endpoint verifikasi.");
     } finally {
@@ -349,7 +343,6 @@ export default function WarungDashboardPage() {
     }
   };
 
-  // Filter Tabel
   const filteredData = useMemo(() => {
     return activities.filter((item) => {
       const q = searchQuery.toLowerCase();
@@ -373,12 +366,12 @@ export default function WarungDashboardPage() {
     <div className="relative min-h-screen w-full bg-[#E8EDF3] font-sans overflow-x-hidden selection:bg-[#52C3BF] selection:text-[#0B424F]">
       <div className="flex flex-col md:flex-row min-h-screen">
         
-        {/* ================= 1. SIDEBAR (Desktop Only) ================= */}
+        {/* SIDEBAR DESKTOP */}
         <div className="hidden md:block shrink-0">
           <Sidebar role="warung" customItems={warungMenuItems} />
         </div>
 
-        {/* ================= 2. HEADER & NAVBAR (Mobile Only) ================= */}
+        {/* HEADER MOBILE */}
         <div className="block md:hidden w-full sticky top-0 z-30 pt-3 px-3 sm:px-4 backdrop-blur-md">
           <div className="flex w-full items-center justify-between px-4 py-3 bg-[linear-gradient(180deg,#1F6A76_0%,#0B424F_100%)] rounded-[18px] shadow-md border border-[#52C3BF]/20 text-white">
             <Link href="/" className="flex items-center gap-2">
@@ -388,9 +381,8 @@ export default function WarungDashboardPage() {
             <div className="flex items-center gap-2">
               <button 
                 type="button"
-                onClick={() => fetchUserData(activeUserId)}
+                onClick={() => fetchWarungData(userQrId)}
                 className="p-2 bg-[#235D6B] hover:bg-[#36959B] border border-[#52C3BF] rounded-[10px] text-white transition-colors"
-                title="Sinkronkan data"
               >
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
               </button>
@@ -398,7 +390,7 @@ export default function WarungDashboardPage() {
               <button 
                 type="button"
                 onClick={() => setNotificationOpen((prev) => !prev)}
-                className="p-2 bg-[#235D6B] hover:bg-[#36959B] border border-[#52C3BF] rounded-[10px] text-white transition-colors relative"
+                className="p-2 bg-[#235D6B] hover:bg-[#36959B] border border-[#52C3BF] rounded-[10px] text-white transition-colors"
               >
                 <Bell className="w-4 h-4" />
               </button>
@@ -414,19 +406,18 @@ export default function WarungDashboardPage() {
           </div>
 
           {notificationOpen && (
-            <div className="mt-2 bg-white text-[#0B424F] p-3 text-xs rounded-xl shadow-lg border border-slate-100 font-['Poppins']">
+            <div className="mt-2 bg-white text-[#0B424F] p-3 text-xs rounded-xl shadow-lg border border-slate-100">
               Tidak ada notifikasi baru.
             </div>
           )}
 
           {isMobileMenuOpen && (
             <div className="mt-2.5 bg-[#0B424F] text-white p-5 rounded-[22px] flex flex-col gap-3 shadow-2xl border border-[#235D6B] animate-fadeIn">
-              {/* Profile Card Mobile: Dinamis sesuai yang login */}
               <div className="flex items-center gap-3 px-3.5 py-2.5 bg-[#235D6B] rounded-xl text-white">
                 <User className="w-5 h-5 text-[#52C3BF]" />
                 <div className="flex flex-col">
-                  <span className="text-sm font-semibold">{activeUserName}</span>
-                  <span className="text-[10px] text-[#52C3BF] font-mono">{activeUserId}</span>
+                  <span className="text-sm font-semibold">{userName}</span>
+                  <span className="text-[10px] text-[#52C3BF] font-mono">{userQrId}</span>
                 </div>
               </div>
 
@@ -453,10 +444,7 @@ export default function WarungDashboardPage() {
                 <Link
                   href="/warung/login"
                   onClick={() => {
-                    localStorage.removeItem("pantra_user");
-                    localStorage.removeItem("pantra_user_qr");
-                    localStorage.removeItem("pantra_warung_id");
-                    localStorage.removeItem("pantra_warung_name");
+                    localStorage.clear();
                     sessionStorage.clear();
                     setIsMobileMenuOpen(false);
                   }}
@@ -470,26 +458,25 @@ export default function WarungDashboardPage() {
           )}
         </div>
 
-        {/* ================= 3. MAIN CONTENT AREA ================= */}
+        {/* MAIN CONTENT AREA */}
         <div className="flex-1 flex flex-col min-w-0">
           
-          {/* Topbar Header (Desktop Only): Menyapa User Dinamis */}
+          {/* HEADER DESKTOP: MENYAPA SESUAI USER YANG LOGIN */}
           <header className="hidden md:flex w-full h-[84px] bg-white px-8 py-4 justify-between items-center shadow-[0px_5px_11px_rgba(182,194,206,0.1)] z-10 border-b border-slate-200">
             <div className="flex flex-col justify-center gap-0.5">
               <h1 className="text-[#0B424F] text-xl font-bold font-['Mona_Sans'] flex items-center gap-2">
-                Halo, {activeUserName}! 👋
+                Halo, {userName}! 👋
               </h1>
               <p className="text-[#36959B] text-xs font-normal font-['Mona_Sans']">
-                ID Akun: <span className="font-mono font-bold text-[#0B424F]">{activeUserId}</span> • Validasi botol &amp; pantau rekam transaksi realtime
+                ID Akun: <span className="font-mono font-bold text-[#0B424F]">{userQrId}</span> • Validasi botol plastik warga secara instan &amp; pantau rekam transaksi realtime
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               <button 
                 type="button"
-                onClick={() => fetchUserData(activeUserId)}
+                onClick={() => fetchWarungData(userQrId)}
                 className="p-3 bg-[#D2F0EE] hover:bg-[#BAE5E2] rounded-[10px] text-[#0B424F] transition-colors flex items-center gap-1.5 text-xs font-semibold"
-                title="Sinkronisasi data backend"
               >
                 <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
                 <span className="hidden xl:inline">Sinkronkan</span>
@@ -503,23 +490,23 @@ export default function WarungDashboardPage() {
                 <Bell className="w-5 h-5" />
               </button>
 
+              {/* BADGE PROFIL KANAN ATAS (DINAMIS DARI USER AKTIF) */}
               <div className="flex items-center gap-2.5 px-3.5 py-2 rounded-[10px] border-[1.4px] border-[#36959B] text-[#0B424F]">
                 <User className="w-5 h-5 text-[#0B424F]" />
                 <div className="flex flex-col text-left">
-                  <span className="text-sm font-semibold leading-tight">{activeUserName}</span>
-                  <span className="text-[10px] text-[#36959B] font-mono leading-none">{activeUserId}</span>
+                  <span className="text-sm font-semibold leading-tight">{userName}</span>
+                  <span className="text-[10px] text-[#36959B] font-mono leading-none">{userQrId}</span>
                 </div>
               </div>
             </div>
           </header>
 
-          {/* Dashboard Body */}
           <main className="p-4 md:p-6 lg:p-8 flex flex-col gap-6 max-w-[1440px] w-full mx-auto font-['Mona_Sans']">
             
-            {/* Top Widget Cards Grid */}
+            {/* Top Cards Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 w-full">
               
-              {/* Card 1: Saldo Kas Utama */}
+              {/* Card Saldo Kas */}
               <section className="bg-[linear-gradient(135deg,#0B424F_0%,#165463_60%,#36959B_100%)] rounded-[22px] p-6 text-white shadow-md flex flex-col justify-between gap-5 relative overflow-hidden">
                 <div className="absolute right-[-30px] bottom-[-30px] w-[140px] h-[140px] bg-white/5 rounded-full blur-2xl pointer-events-none" />
 
@@ -527,7 +514,7 @@ export default function WarungDashboardPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-[#8AD4D0] uppercase tracking-wider flex items-center gap-1.5">
                       <Wallet className="w-3.5 h-3.5" />
-                      Saldo Kas ({activeUserName})
+                      Saldo Kas ({userName})
                     </span>
                     <span className="text-[10px] bg-emerald-400/20 text-emerald-300 font-mono px-2 py-0.5 rounded-full">
                       Live Supabase
@@ -555,7 +542,7 @@ export default function WarungDashboardPage() {
                 </div>
               </section>
 
-              {/* Card 2: Statistik Pengumpulan Botol */}
+              {/* Card Daur Ulang */}
               <section className="bg-white rounded-[22px] p-6 shadow-sm border border-slate-100 flex flex-col justify-between gap-4">
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
@@ -588,7 +575,7 @@ export default function WarungDashboardPage() {
                 </button>
               </section>
 
-              {/* Card 3: Action Scanner Kamera */}
+              {/* Card Scanner */}
               <section className="bg-[#E6F5F4] rounded-[22px] p-6 shadow-sm border border-[#52C3BF] flex flex-col items-center justify-between text-center gap-4 relative overflow-hidden group">
                 <ScanLine className="absolute -right-6 -bottom-6 w-36 h-36 text-[#52C3BF] opacity-15 group-hover:scale-110 transition-transform duration-500 pointer-events-none" />
 
@@ -613,9 +600,8 @@ export default function WarungDashboardPage() {
 
             </div>
 
-            {/* Riwayat Verifikasi Terakhir Table */}
+            {/* Tabel Riwayat Transaksi */}
             <section className="w-full bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-slate-100 flex flex-col gap-5">
-              
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
                 <div>
                   <h2 className="text-[#0B424F] text-base sm:text-lg font-bold">Riwayat Verifikasi &amp; Transaksi</h2>
@@ -637,7 +623,6 @@ export default function WarungDashboardPage() {
                 </div>
               </div>
 
-              {/* Table Toolbar */}
               <div className="flex items-center justify-between text-xs text-slate-500">
                 <div className="flex items-center gap-2">
                   <span>Show</span>
@@ -660,7 +645,6 @@ export default function WarungDashboardPage() {
                 </span>
               </div>
 
-              {/* Data Table */}
               <div className="w-full overflow-x-auto rounded-xl border border-slate-100">
                 <table className="w-full text-left border-collapse min-w-[720px]">
                   <thead>
@@ -697,11 +681,7 @@ export default function WarungDashboardPage() {
                           </td>
                           <td className="py-3.5 px-3 font-bold text-[#0B424F]">{row.warga}</td>
                           <td className="py-3.5 px-3 text-slate-600 font-medium">{row.detail}</td>
-                          <td
-                            className={`py-3.5 px-3 font-bold ${
-                              row.isPositive ? "text-teal-600" : "text-rose-500"
-                            }`}
-                          >
+                          <td className={`py-3.5 px-3 font-bold ${row.isPositive ? "text-teal-600" : "text-rose-500"}`}>
                             {row.nominal}
                           </td>
                           <td className="py-3.5 px-3 text-center text-slate-400 whitespace-nowrap">
@@ -727,7 +707,6 @@ export default function WarungDashboardPage() {
                 </table>
               </div>
 
-              {/* Pagination */}
               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2 text-xs text-slate-600">
                 <span>
                   Showing {totalEntries > 0 ? startIndex + 1 : 0} to {Math.min(startIndex + entriesPerPage, totalEntries)} of {totalEntries} entries
@@ -759,94 +738,50 @@ export default function WarungDashboardPage() {
                   </button>
                 </div>
               </div>
-
             </section>
           </main>
         </div>
-
       </div>
 
-      {/* ================= 4. MODAL WIZARD PENARIKAN SALDO ================= */}
-      
-      {/* STEP 1: Masukkan Nominal */}
+      {/* MODAL TARIK SALDO & POPUP */}
       {withdrawStep === "nominal" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-[384px] md:w-[420px] bg-white rounded-[20px] p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100 font-['Poppins']">
-            <button
-              type="button"
-              onClick={() => setWithdrawStep(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
-            >
+          <div className="w-[384px] md:w-[420px] bg-white rounded-[20px] p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100">
+            <button type="button" onClick={() => setWithdrawStep(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1">
               <X className="w-5 h-5" />
             </button>
-
             <div className="w-full flex flex-col items-center gap-2 text-center">
               <h3 className="text-[#52C3BF] text-2xl font-bold">Masukkan Nominal</h3>
               <p className="text-xs text-slate-400">Saldo aktif: {formatRupiah(balance)}</p>
-
               <div className="px-5 py-2.5 bg-[#E8F6F5] rounded-xl inline-flex items-center justify-center min-w-[140px] border border-[#52C3BF]/30 mt-1">
-                <input
-                  type="text"
-                  value={withdrawAmount ? `Rp${parseInt(withdrawAmount, 10).toLocaleString("id-ID")}` : "Rp0"}
-                  onChange={(e) => {
-                    const raw = e.target.value.replace(/\D/g, "");
-                    setWithdrawAmount(raw);
-                  }}
-                  className="hidden md:block w-full text-center bg-transparent text-[#0B424F] text-lg font-bold focus:outline-none"
-                  placeholder="Rp0"
-                />
-                <span className="block md:hidden text-[#0B424F] text-lg font-bold">
+                <span className="text-[#0B424F] text-lg font-bold">
                   {withdrawAmount ? `Rp${parseInt(withdrawAmount, 10).toLocaleString("id-ID")}` : "Rp0"}
                 </span>
               </div>
             </div>
 
-            {/* Virtual Numpad Mobile */}
             <div className="block md:hidden w-full max-w-[280px]">
               <div className="grid grid-cols-3 gap-2.5">
                 {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => handleNumpadPress(num)}
-                    className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold active:scale-95"
-                  >
+                  <button key={num} type="button" onClick={() => handleNumpadPress(num)} className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold">
                     {num}
                   </button>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => handleNumpadPress("back")}
-                  className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-slate-500 text-xs font-semibold"
-                >
+                <button type="button" onClick={() => handleNumpadPress("back")} className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-slate-500 text-xs font-semibold">
                   Batal
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleNumpadPress("0")}
-                  className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold"
-                >
+                <button type="button" onClick={() => handleNumpadPress("0")} className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold">
                   0
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleNumpadPress("delete")}
-                  className="h-11 bg-rose-50 hover:bg-rose-100 rounded-xl flex items-center justify-center text-rose-500 text-xs font-bold"
-                >
+                <button type="button" onClick={() => handleNumpadPress("delete")} className="h-11 bg-rose-50 hover:bg-rose-100 rounded-xl flex items-center justify-center text-rose-500 text-xs font-bold">
                   Hapus
                 </button>
               </div>
             </div>
 
-            {/* Quick Presets */}
             <div className="flex gap-2 w-full">
               {[25000, 50000, 100000].map((val) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => setWithdrawAmount(val.toString())}
-                  className="flex-1 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs font-semibold text-slate-600 border border-slate-200"
-                >
+                <button key={val} type="button" onClick={() => setWithdrawAmount(val.toString())} className="flex-1 py-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs font-semibold text-slate-600 border border-slate-200">
                   {formatRupiah(val)}
                 </button>
               ))}
@@ -856,17 +791,13 @@ export default function WarungDashboardPage() {
               type="button"
               onClick={() => {
                 const num = parseInt(withdrawAmount, 10);
-                if (isNaN(num) || num <= 0) {
-                  alert("Masukkan nominal penarikan yang valid.");
-                  return;
-                }
-                if (num > balance) {
-                  alert("Saldo tidak mencukupi.");
+                if (isNaN(num) || num <= 0 || num > balance) {
+                  alert("Nominal penarikan tidak valid atau saldo kurang.");
                   return;
                 }
                 setWithdrawStep("method");
               }}
-              className="w-full py-3.5 bg-[#52C3BF] hover:bg-[#36959B] text-white font-bold text-sm rounded-xl transition-colors shadow-md"
+              className="w-full py-3.5 bg-[#52C3BF] hover:bg-[#36959B] text-white font-bold text-sm rounded-xl shadow-md"
             >
               Lanjutkan ke Metode
             </button>
@@ -874,34 +805,25 @@ export default function WarungDashboardPage() {
         </div>
       )}
 
-      {/* STEP 2: Pilih Metode E-Wallet */}
       {withdrawStep === "method" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-[384px] md:w-[420px] bg-white rounded-[20px] p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100 font-['Poppins']">
-            <button
-              type="button"
-              onClick={() => setWithdrawStep(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-            >
+          <div className="w-[384px] md:w-[420px] bg-white rounded-[20px] p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100">
+            <button type="button" onClick={() => setWithdrawStep(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
-
             <div className="w-full flex flex-col items-center gap-1 text-center">
               <Wallet className="w-9 h-9 text-[#52C3BF] mb-1" />
               <h3 className="text-[#0B424F] text-lg font-bold">Pilih Akun Rekening Tujuan</h3>
               <p className="text-xs text-[#36959B]">Nominal: {formatRupiah(withdrawAmount)}</p>
             </div>
-
             <div className="w-full flex flex-col gap-2">
               {E_WALLETS.map((wallet) => (
                 <button
                   key={wallet.id}
                   type="button"
                   onClick={() => setSelectedWallet(wallet.id)}
-                  className={`w-full p-3.5 rounded-xl border flex items-center justify-between transition-all ${
-                    selectedWallet === wallet.id
-                      ? "border-[#52C3BF] bg-[#E8F6F5] text-[#0B424F] font-bold ring-1 ring-[#52C3BF]"
-                      : "border-slate-200 bg-white text-slate-600 font-medium"
+                  className={`w-full p-3.5 rounded-xl border flex items-center justify-between ${
+                    selectedWallet === wallet.id ? "border-[#52C3BF] bg-[#E8F6F5] text-[#0B424F] font-bold ring-1 ring-[#52C3BF]" : "border-slate-200 bg-white text-slate-600"
                   }`}
                 >
                   <div className="flex flex-col text-left">
@@ -912,143 +834,73 @@ export default function WarungDashboardPage() {
                 </button>
               ))}
             </div>
-
             <div className="w-full flex gap-2.5 mt-2">
-              <button
-                type="button"
-                onClick={() => setWithdrawStep("nominal")}
-                className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl"
-              >
-                Kembali
-              </button>
-              <button
-                type="button"
-                onClick={() => setWithdrawStep("pin")}
-                className="w-2/3 py-3 bg-[#52C3BF] hover:bg-[#36959B] text-white font-bold text-xs rounded-xl shadow-md"
-              >
-                Lanjut ke PIN
-              </button>
+              <button type="button" onClick={() => setWithdrawStep("nominal")} className="w-1/3 py-3 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl">Kembali</button>
+              <button type="button" onClick={() => setWithdrawStep("pin")} className="w-2/3 py-3 bg-[#52C3BF] text-white font-bold text-xs rounded-xl shadow-md">Lanjut ke PIN</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* STEP 3: Masukkan PIN Penarikan */}
       {withdrawStep === "pin" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
-          <div className="w-[384px] md:w-[420px] bg-white rounded-[20px] p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100 font-['Poppins']">
-            <button
-              type="button"
-              onClick={() => setWithdrawStep(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-            >
+          <div className="w-[384px] md:w-[420px] bg-white rounded-[20px] p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100">
+            <button type="button" onClick={() => setWithdrawStep(null)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
-
             <div className="w-full flex flex-col items-center gap-1 text-center">
               <Lock className="w-9 h-9 text-[#52C3BF] mb-1" />
               <h3 className="text-[#0B424F] text-lg font-bold">Masukkan PIN Keamanan</h3>
-              <p className="text-xs text-slate-400">Konfirmasi pencairan {formatRupiah(withdrawAmount)}</p>
-
+              <p className="text-xs text-slate-400">Pencairan {formatRupiah(withdrawAmount)}</p>
               <div className="flex gap-2.5 my-3">
                 {[...Array(6)].map((_, i) => (
-                  <div
-                    key={i}
-                    className={`w-3.5 h-3.5 rounded-full border-2 border-[#52C3BF] transition-all ${
-                      i < pinCode.length ? "bg-[#52C3BF] scale-110" : "bg-transparent"
-                    }`}
-                  />
+                  <div key={i} className={`w-3.5 h-3.5 rounded-full border-2 border-[#52C3BF] ${i < pinCode.length ? "bg-[#52C3BF]" : "bg-transparent"}`} />
                 ))}
               </div>
             </div>
-
             <div className="w-full max-w-[260px]">
               <div className="grid grid-cols-3 gap-2.5">
                 {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    onClick={() => handlePinPress(num)}
-                    className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold active:scale-95"
-                  >
+                  <button key={num} type="button" onClick={() => handlePinPress(num)} className="h-11 bg-slate-100 rounded-xl text-[#0B424F] font-bold">
                     {num}
                   </button>
                 ))}
                 <div />
-                <button
-                  type="button"
-                  onClick={() => handlePinPress("0")}
-                  className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold"
-                >
-                  0
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePinPress("delete")}
-                  className="h-11 bg-rose-50 hover:bg-rose-100 rounded-xl flex items-center justify-center text-rose-500 text-xs font-bold"
-                >
-                  Hapus
-                </button>
+                <button type="button" onClick={() => handlePinPress("0")} className="h-11 bg-slate-100 rounded-xl text-[#0B424F] font-bold">0</button>
+                <button type="button" onClick={() => handlePinPress("delete")} className="h-11 bg-rose-50 text-rose-500 rounded-xl text-xs font-bold">Hapus</button>
               </div>
             </div>
-
             <div className="w-full flex gap-2.5 mt-2">
-              <button
-                type="button"
-                onClick={() => setWithdrawStep("method")}
-                className="w-1/3 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl"
-              >
-                Kembali
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteWithdraw}
-                disabled={submittingWithdraw}
-                className="w-2/3 py-3 bg-[#52C3BF] hover:bg-[#36959B] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-1.5"
-              >
-                {submittingWithdraw ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Memproses...</span>
-                  </>
-                ) : (
-                  <span>Cairkan Sekarang</span>
-                )}
+              <button type="button" onClick={() => setWithdrawStep("method")} className="w-1/3 py-3 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl">Kembali</button>
+              <button type="button" onClick={handleExecuteWithdraw} disabled={submittingWithdraw} className="w-2/3 py-3 bg-[#52C3BF] disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md">
+                {submittingWithdraw ? "Memproses..." : "Cairkan Sekarang"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ================= 5. MODAL QUICK VERIFICATION (DEMO HELPER) ================= */}
       {showQuickVerifyModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn font-['Mona_Sans']">
           <div className="w-full max-w-[440px] bg-white rounded-2xl p-6 shadow-2xl border border-slate-100 flex flex-col gap-4 relative">
-            <button
-              type="button"
-              onClick={() => setShowQuickVerifyModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
-            >
+            <button type="button" onClick={() => setShowQuickVerifyModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1">
               <X className="w-5 h-5" />
             </button>
-
             <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
               <div className="w-9 h-9 rounded-xl bg-[#E8F6F5] text-[#36959B] flex items-center justify-center">
                 <Recycle className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-base font-bold text-[#0B424F]">Verifikasi Setoran Cepat</h3>
-                <p className="text-[11px] text-slate-400">Simulasikan proses scanner kamera untuk demo</p>
+                <p className="text-[11px] text-slate-400">Simulasi scanner botol untuk demo</p>
               </div>
             </div>
-
             {verifyAlert && (
               <div className="p-3 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{verifyAlert}</span>
               </div>
             )}
-
             <form onSubmit={handleVerifyBottleSubmit} className="flex flex-col gap-3.5 text-xs">
               <div className="flex flex-col gap-1">
                 <label className="font-bold text-[#0B424F]">QR ID Warga</label>
@@ -1057,11 +909,10 @@ export default function WarungDashboardPage() {
                   value={targetUserQr}
                   onChange={(e) => setTargetUserQr(e.target.value.toUpperCase())}
                   placeholder="Contoh: USR-8921"
-                  className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-slate-200 rounded-xl font-mono font-bold text-[#0B424F] focus:outline-none focus:border-[#52C3BF]"
+                  className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-slate-200 rounded-xl font-mono font-bold text-[#0B424F]"
                   required
                 />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="font-bold text-[#0B424F]">Jumlah Botol</label>
@@ -1071,17 +922,16 @@ export default function WarungDashboardPage() {
                     max={50}
                     value={bottleCount}
                     onChange={(e) => setBottleCount(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-slate-200 rounded-xl font-bold text-[#0B424F] focus:outline-none focus:border-[#52C3BF]"
+                    className="w-full px-3.5 py-2.5 bg-[#F8FAFC] border border-slate-200 rounded-xl font-bold text-[#0B424F]"
                     required
                   />
                 </div>
-
                 <div className="flex flex-col gap-1">
                   <label className="font-bold text-[#0B424F]">Material</label>
                   <select
                     value={materialType}
                     onChange={(e) => setMaterialType(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-slate-200 rounded-xl font-bold text-[#0B424F] focus:outline-none focus:border-[#52C3BF]"
+                    className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-slate-200 rounded-xl font-bold text-[#0B424F]"
                   >
                     <option value="PET">Plastik PET (Rp500)</option>
                     <option value="HDPE">Plastik HDPE (Rp600)</option>
@@ -1089,59 +939,30 @@ export default function WarungDashboardPage() {
                   </select>
                 </div>
               </div>
-
-              <div className="p-3 bg-[#E8F6F5] rounded-xl flex justify-between items-center text-[#0B424F] font-bold">
-                <span>Insentif Masuk ke Warga:</span>
-                <span className="text-sm text-teal-700">Rp{(bottleCount * 500).toLocaleString("id-ID")}</span>
-              </div>
-
               <button
                 type="submit"
                 disabled={verifyingBottle}
-                className="w-full py-3 bg-[#52C3BF] hover:bg-teal-400 disabled:opacity-50 text-white font-bold rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 mt-1"
+                className="w-full py-3 bg-[#52C3BF] hover:bg-teal-400 disabled:opacity-50 text-white font-bold rounded-xl shadow-sm mt-1"
               >
-                {verifyingBottle ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Menghubungi AI Backend...</span>
-                  </>
-                ) : (
-                  <span>Konfirmasi &amp; Tambah Saldo Warga</span>
-                )}
+                {verifyingBottle ? "Menghubungi AI Backend..." : "Konfirmasi & Tambah Saldo"}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* ================= 6. POP-UP SUKSES UMUM ================= */}
       {showPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn font-['Poppins']">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
           <div className="w-full max-w-[420px] bg-white rounded-[24px] shadow-2xl p-7 flex flex-col items-center text-center relative border border-slate-100">
-            <button 
-              type="button"
-              onClick={() => setShowPopup(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-            >
+            <button type="button" onClick={() => setShowPopup(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
               <X className="w-5 h-5" />
             </button>
-
             <div className="w-16 h-16 rounded-full bg-[#E6F5F4] flex items-center justify-center mb-4 text-[#52C3BF]">
               <CheckCircle2 className="w-10 h-10 text-[#52C3BF]" />
             </div>
-
-            <h3 className="text-[#0B424F] text-xl font-bold mb-2">
-              Transaksi Berhasil!
-            </h3>
-            <p className="text-[#1F6A76] text-xs sm:text-sm font-normal mb-6 leading-relaxed">
-              {popupMessage}
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setShowPopup(false)}
-              className="w-full py-3 bg-[#52C3BF] hover:bg-[#36959B] text-white font-bold text-xs rounded-xl transition-colors shadow-md"
-            >
+            <h3 className="text-[#0B424F] text-xl font-bold mb-2">Transaksi Berhasil!</h3>
+            <p className="text-[#1F6A76] text-xs sm:text-sm font-normal mb-6 leading-relaxed">{popupMessage}</p>
+            <button type="button" onClick={() => setShowPopup(false)} className="w-full py-3 bg-[#52C3BF] hover:bg-[#36959B] text-white font-bold text-xs rounded-xl shadow-md">
               Tutup
             </button>
           </div>
