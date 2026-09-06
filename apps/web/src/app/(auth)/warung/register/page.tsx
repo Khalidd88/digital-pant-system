@@ -1,0 +1,314 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import { useRouter } from "next/navigation";
+import {
+  Eye,
+  EyeOff,
+  Activity,
+  CheckCircle2,
+  Heart,
+} from "lucide-react";
+
+// Asset Imports
+import logoDecor from "@/assets/LOGO.png";
+import vectorWhite from "@/assets/Vector2.png";
+import ellipse1018 from "@/assets/Ellipse 1018.png";
+import ellipse1019 from "@/assets/Ellipse 1019.png";
+import pengumpulanBotolImg from "@/assets/pengumpulan botol.jpg";
+
+export default function RegisterWarungPage() {
+  const router = useRouter();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Form State
+  const [formData, setFormData] = useState({
+    fullName: "",
+    warungName: "",
+    email: "",
+    phone: "",
+    password: "",
+    confirmPassword: "",
+  });
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log("Submit Register Warung:", formData);
+    // Lanjut ke langkah verifikasi berkas warung
+    router.push("/warung/verify");
+  };
+
+  return (
+    <div className="relative min-h-screen w-full bg-[linear-gradient(180deg,#165463_0%,#0B424F_100%)] flex items-center justify-center p-4 md:p-8 font-sans overflow-x-hidden selection:bg-[#52C3BF] selection:text-[#0B424F]">
+      
+      {/* Background Radial Glow & Ellipse Blur Effects */}
+      <div className="absolute top-[-100px] left-[-100px] w-[535px] h-[535px] bg-[#52C3BF]/40 rounded-full blur-[180px] pointer-events-none" />
+      <div className="absolute top-[662px] left-[353px] w-[200px] h-[200px] bg-[#165463] rounded-full blur-[126px] pointer-events-none" />
+      <div className="absolute bottom-[-108px] right-[-100px] w-[450px] h-[450px] bg-[#52C3BF]/30 rounded-full blur-[180px] pointer-events-none" />
+
+      {/* Decorative Ellipses */}
+      <div className="absolute top-[15%] right-[-60px] w-[300px] pointer-events-none opacity-20 z-0">
+        <Image src={ellipse1018} alt="" className="w-full h-auto" priority />
+      </div>
+      <div className="absolute bottom-[10%] left-[-60px] w-[350px] pointer-events-none opacity-20 z-0">
+        <Image src={ellipse1019} alt="" className="w-full h-auto" priority />
+      </div>
+
+      {/* CARD MAIN CONTAINER */}
+      <main className="relative z-10 w-full max-w-[920px] bg-white rounded-[20px] shadow-[0_20px_50px_rgba(11,66,79,0.3)] flex flex-col md:flex-row overflow-hidden border border-[#52C3BF]/30">
+        
+        {/* ================= LEFT BANNER (SIDEBAR VISUAL) ================= */}
+        <div className="relative w-full md:w-[460px] min-h-[380px] md:min-h-[720px] bg-[linear-gradient(180deg,#165463_0%,#0B424F_100%)] p-6 md:p-8 flex flex-col justify-between overflow-hidden shrink-0">
+          
+          {/* Background Image: pengumpulan botol.jpg */}
+          <div className="absolute inset-0 z-0 opacity-35 mix-blend-overlay">
+            <Image
+              src={pengumpulanBotolImg}
+              alt="Pengumpulan botol di mitra warung"
+              fill
+              className="object-cover object-center"
+              priority
+            />
+          </div>
+
+          {/* Watermark Decoration: LOGO.png */}
+          <div className="absolute right-[-80px] bottom-[-60px] w-[320px] md:w-[420px] pointer-events-none opacity-20 z-0">
+            <Image
+              src={logoDecor}
+              alt=""
+              className="w-full h-auto object-contain"
+              priority
+            />
+          </div>
+
+          {/* Soft Radial Glow Overlay */}
+          <div 
+            className="absolute inset-0 pointer-events-none z-0"
+            style={{
+              background: "radial-gradient(80% 80% at 20% 20%, rgba(82, 195, 191, 0.4) 0%, rgba(11, 66, 79, 0) 100%)",
+            }}
+          />
+
+          {/* Top Section: Pantra Brand Logo */}
+          <div className="relative z-10 flex items-center gap-3">
+            <Link href="/">
+              <Image
+                src={vectorWhite}
+                alt="PANTRA Logo"
+                className="h-9 md:h-10 w-auto object-contain"
+                priority
+              />
+            </Link>
+          </div>
+
+          {/* Bottom Section: Headline & 3 Badge Feature Cards */}
+          <div className="relative z-10 mt-auto pt-10">
+            <h2 className="text-xl md:text-2xl font-bold text-white leading-snug mb-6">
+              Kelola Setoran Botol <br />dengan Mudah
+            </h2>
+
+            {/* 3 Badge Cards */}
+            <div className="grid grid-cols-3 gap-2.5">
+              
+              {/* Card 1: Data real-time */}
+              <div className="bg-white rounded-[14px] p-3 flex flex-col justify-between h-[80px] shadow-sm">
+                <div className="w-6 h-6 rounded-full bg-[#E8F6F5] flex items-center justify-center text-[#52C3BF]">
+                  <Activity className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-bold text-[#52C3BF] text-[11px] leading-tight">Data real-time</span>
+              </div>
+
+              {/* Card 2: Terverifikasi */}
+              <div className="bg-[#165463]/70 backdrop-blur-md border border-[#52C3BF] rounded-[14px] p-3 flex flex-col justify-between h-[80px]">
+                <div className="w-6 h-6 rounded-full bg-[#52C3BF]/20 flex items-center justify-center text-[#52C3BF]">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-bold text-white text-[11px] leading-tight">Terverifikasi</span>
+              </div>
+
+              {/* Card 3: Transparan */}
+              <div className="bg-[#165463]/70 backdrop-blur-md border border-[#52C3BF] rounded-[14px] p-3 flex flex-col justify-between h-[80px]">
+                <div className="w-6 h-6 rounded-full bg-[#52C3BF]/20 flex items-center justify-center text-[#52C3BF]">
+                  <Heart className="w-3.5 h-3.5" />
+                </div>
+                <span className="font-bold text-white text-[11px] leading-tight">Transparan</span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+
+        {/* ================= RIGHT FORM SECTION ================= */}
+        <div className="w-full p-6 sm:p-8 md:p-10 flex flex-col justify-center bg-white">
+          
+          <h1 className="text-2xl font-bold text-[#0B424F] mb-6">
+            Registrasi Mitra Warung
+          </h1>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+            
+            {/* Field 1: Nama Pemilik */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="fullName" className="text-xs font-semibold text-[#0B424F]">
+                Nama Pemilik Warung
+              </label>
+              <input
+                id="fullName"
+                type="text"
+                name="fullName"
+                value={formData.fullName}
+                onChange={handleChange}
+                placeholder="Masukkan nama lengkap"
+                className="w-full px-3.5 py-2 bg-[#E8F6F5] border border-[#36959B] rounded-[10px] text-sm text-[#0B424F] font-medium focus:outline-none focus:ring-2 focus:ring-[#52C3BF]"
+                required
+              />
+            </div>
+
+            {/* Field 2: Nama Warung */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="warungName" className="text-xs font-semibold text-[#0B424F]">
+                Nama Warung
+              </label>
+              <input
+                id="warungName"
+                type="text"
+                name="warungName"
+                value={formData.warungName}
+                onChange={handleChange}
+                placeholder="Contoh: Warung Berkah Jaya"
+                className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                required
+              />
+            </div>
+
+            {/* Field 3: Email */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="email" className="text-xs font-semibold text-[#0B424F]">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                placeholder="warung@gmail.com"
+                className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                required
+              />
+            </div>
+
+            {/* Field 4: No. Telepon */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="phone" className="text-xs font-semibold text-[#0B424F]">
+                No. Telepon / WhatsApp
+              </label>
+              <div className="flex gap-2">
+                <div className="flex items-center gap-2 px-3 py-2 bg-[#F5F5F5] rounded-[10px] shrink-0 border border-transparent">
+                  <span className="text-sm font-semibold text-[#0B424F]">+62</span>
+                </div>
+                <input
+                  id="phone"
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                  placeholder="08XX XXXX XXXX"
+                  className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Field 5: Password */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="password" className="text-xs font-semibold text-[#0B424F]">
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  placeholder="*************"
+                  className="w-full px-3.5 py-2 pr-10 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#36959B] hover:text-[#0B424F] transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Field 6: Konfirmasi Password */}
+            <div className="flex flex-col gap-1">
+              <label htmlFor="confirmPassword" className="text-xs font-semibold text-[#0B424F]">
+                Konfirmasi Password
+              </label>
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showConfirmPassword ? "text" : "password"}
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  placeholder="*************"
+                  className="w-full px-3.5 py-2 pr-10 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#36959B] hover:text-[#0B424F] transition-colors"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              className="w-full py-3 mt-2 bg-[#52C3BF] hover:bg-teal-400 text-white font-bold text-sm rounded-[10px] transition-colors shadow-sm"
+            >
+              Lanjut ke Verifikasi Berkas
+            </button>
+
+          </form>
+
+          {/* Footer Text: Login Redirect */}
+          <div className="text-center mt-4 text-xs text-[#0B424F]">
+            Sudah punya akun Mitra?{" "}
+            <Link
+              href="/warung/login"
+              className="font-bold hover:underline text-[#0B424F]"
+            >
+              Login di sini
+            </Link>
+          </div>
+
+        </div>
+
+      </main>
+
+    </div>
+  );
+}

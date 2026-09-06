@@ -16,3 +16,4 @@ env/
 *.pkl
 datasets/
 runs/
+node_modules
