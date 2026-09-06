@@ -3,7 +3,7 @@ import { prisma } from '../lib/prisma';
 
 export const verifyBottleScan = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { qrId, userQrId, material, depositValue } = req.body;
+    const { qrId, userQrId, material, depositValue, bottleCount } = req.body;
     const targetQrId = qrId || userQrId;
 
     if (!targetQrId || !material) {
@@ -14,14 +14,19 @@ export const verifyBottleScan = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    const depositAmount =
+    // 1. Hitung jumlah botol (default 1 jika tidak dikirim)
+    const count = Math.max(1, parseInt(String(bottleCount || 1), 10));
+
+    // 2. Standarisasi tarif botol (Rp500 / botol untuk PET)
+    const matUpper = String(material).trim().toUpperCase();
+    const ratePerBottle =
       depositValue !== undefined
         ? Number(depositValue)
-        : material === 'PLASTIC_PET'
-        ? 500
-        : 600;
+        : (matUpper.includes('PET') || matUpper.includes('PLASTIC') ? 500 : 500);
 
-    // 1. Cari user
+    const totalDeposit = ratePerBottle * count;
+
+    // 3. Cari user warga
     const user = await prisma.user.findUnique({
       where: { qrId: targetQrId }
     });
@@ -34,20 +39,20 @@ export const verifyBottleScan = async (req: Request, res: Response): Promise<voi
       return;
     }
 
-    // 2. Eksekusi transaksi
+    // 4. Eksekusi atomic transaction: Simpan scan log + tambah saldo warga
     const [scanLog, updatedUser] = await prisma.$transaction([
       prisma.scanLog.create({
         data: {
           userId: user.id,
-          material: String(material).trim(),
-          depositValue: depositAmount
+          material: matUpper,
+          depositValue: totalDeposit
         }
       }),
       prisma.user.update({
         where: { id: user.id },
         data: {
           balance: {
-            increment: depositAmount
+            increment: totalDeposit
           }
         }
       })
@@ -55,7 +60,7 @@ export const verifyBottleScan = async (req: Request, res: Response): Promise<voi
 
     res.status(200).json({
       success: true,
-      message: 'Verifikasi botol berhasil, saldo bertambah!',
+      message: `Verifikasi ${count} botol berhasil, saldo bertambah Rp${totalDeposit.toLocaleString('id-ID')}!`,
       data: {
         scanId: scanLog.id,
         user: {
@@ -63,8 +68,10 @@ export const verifyBottleScan = async (req: Request, res: Response): Promise<voi
           qrId: updatedUser.qrId,
           previousBalance: user.balance,
           newBalance: updatedUser.balance,
-          addedBalance: depositAmount
+          addedBalance: totalDeposit
         },
+        bottleCount: count,
+        ratePerBottle: ratePerBottle,
         material: scanLog.material,
         timestamp: scanLog.createdAt
       }

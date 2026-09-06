@@ -2,6 +2,8 @@ import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import userRoutes from './routes/user.routes';
 import scanRoutes from './routes/scan.routes';
+import assistantRoutes from './routes/assistant.routes';
+import walletRoutes from './routes/wallet.routes';
 
 const app: Application = express();
 
@@ -14,10 +16,12 @@ app.get('/', (_req: Request, res: Response) => {
     status: 'online',
     system: 'Digital Pant System (PANTRA) API',
     endpoints: {
-      health: '/health',
+      health: 'GET /health',
       getUser: 'GET /api/user/:qrId',
       verifyScan: 'POST /api/scan/verify',
-      impactAnalytics: 'GET /api/analytics/impact'
+      impactAnalytics: 'GET /api/analytics/impact',
+      assistantChat: 'POST /api/assistant/chat',
+      walletWithdraw: 'POST /api/wallet/withdraw'
     }
   });
 });
@@ -28,6 +32,8 @@ app.get('/health', (_req: Request, res: Response) => {
 
 app.use('/api', userRoutes);
 app.use('/api', scanRoutes);
+app.use('/api', assistantRoutes);
+app.use('/api', walletRoutes);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err.stack || err.message);
