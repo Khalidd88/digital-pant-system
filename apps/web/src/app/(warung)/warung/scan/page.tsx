@@ -16,7 +16,6 @@ import {
   UserPlus,
   LogOut,
   ArrowLeft,
-  ScanLine,
   Upload,
   Loader2,
   RefreshCcw,
@@ -25,10 +24,15 @@ import {
   Zap,
   Plus,
   Minus,
+  Wallet,
   Sparkles,
+  AlertTriangle,
 } from "lucide-react";
 
 import vectorLogo from "@/assets/Vector.png";
+
+// Dynamic API URL: otomatis baca env Vercel saat live, fallback ke localhost:4000 saat dev lokal
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 type ItemId = "pet" | "kaleng";
 type ScanStep = "SCAN_ID" | "SCAN_BOTOL" | "KONFIRMASI";
@@ -46,12 +50,18 @@ interface WargaProfile {
   saldoAwal: number;
 }
 
+interface BBoxDetection {
+  label: string;
+  confidence: number;
+  bbox: [number, number, number, number];
+}
+
 const INITIAL_ITEMS: DetectedItem[] = [
-  { id: "pet", label: "Botol Plastik PET", qty: 0, rate: 500 },
+  { id: "pet", label: "Botol Plastik PET (Layak)", qty: 0, rate: 500 },
   { id: "kaleng", label: "Kaleng Aluminium", qty: 0, rate: 800 },
 ];
 
-const KOMISI_WARUNG_PERSEN = 0.1; // 10% komisi operasional warung
+const KOMISI_WARUNG_PERSEN = 0.1;
 
 function formatRupiah(value: number) {
   return `Rp${value.toLocaleString("id-ID")}`;
@@ -59,7 +69,8 @@ function formatRupiah(value: number) {
 
 const warungMenuItems = [
   { label: "Dashboard", href: "/warung/dashboard", icon: Home },
-  { label: "Scan QR", href: "/warung/scan", icon: QrCode },
+  { label: "Scan QR Warga", href: "/warung/scan", icon: QrCode },
+  { label: "Kelola Kas & Settlement", href: "/warung/dompet", icon: Wallet },
   { label: "Riwayat Transaksi", href: "/warung/riwayat", icon: History },
   { label: "PANTRA Assistant", href: "/warung/assistant", icon: UserPlus },
 ];
@@ -67,11 +78,9 @@ const warungMenuItems = [
 export default function WarungScanPage() {
   const [step, setStep] = useState<ScanStep>("SCAN_ID");
 
-  // Identitas Mitra Warung Aktif
   const [warungName, setWarungName] = useState("Warung Mitra");
   const [warungId, setWarungId] = useState("WRG-0001");
 
-  // Mobile Drawer & Notifikasi
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
 
@@ -81,10 +90,12 @@ export default function WarungScanPage() {
   const [isResolvingWarga, setIsResolvingWarga] = useState(false);
   const [scannedWarga, setScannedWarga] = useState<WargaProfile | null>(null);
 
-  // Tahap 2: Verifikasi Botol (AI Edge Simulation)
+  // Tahap 2: Verifikasi Botol AI
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(INITIAL_ITEMS);
+  const [rejectedBottleCount, setRejectedBottleCount] = useState(0);
   const [isDetecting, setIsDetecting] = useState(false);
   const [cvError, setCvError] = useState<string | null>(null);
+  const [aiStatusMessage, setAiStatusMessage] = useState<string | null>(null);
   const [scanCompletedAt, setScanCompletedAt] = useState<Date | null>(null);
 
   // Tahap 3: Pencairan Saldo & PIN
@@ -96,12 +107,11 @@ export default function WarungScanPage() {
   const [successInfo, setSuccessInfo] = useState<{ earnedWarga: number; earnedWarung: number; newBalance: number } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasOverlayRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrControlsRef = useRef<IScannerControls | null>(null);
   const cvStreamRef = useRef<MediaStream | null>(null);
-  const cvIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Muat session warung saat halaman dibuka
   useEffect(() => {
     if (typeof window !== "undefined") {
       const savedWarungId = localStorage.getItem("pantra_warung_id") || "WRG-0001";
@@ -115,13 +125,10 @@ export default function WarungScanPage() {
   const totalKomisiWarung = Math.round(totalSaldoWarga * KOMISI_WARUNG_PERSEN);
   const totalItemTerdeteksi = detectedItems.reduce((sum, item) => sum + item.qty, 0);
 
-  // --------------------------------------------------------------------
-  // AMBIL DATA WARGA RIIL DARI DATABASE SUPABASE
-  // --------------------------------------------------------------------
   const fetchWargaFromDB = async (targetQr: string): Promise<WargaProfile> => {
     const cleanId = targetQr.trim().toUpperCase();
     try {
-      const res = await fetch(`http://localhost:4000/api/user/${cleanId}`, { cache: "no-store" });
+      const res = await fetch(`${API_BASE_URL}/api/user/${cleanId}`, { cache: "no-store" });
       const json = await res.json();
 
       if (json.success && json.data) {
@@ -131,11 +138,10 @@ export default function WarungScanPage() {
           saldoAwal: json.data.balance || 0,
         };
       }
-    } catch (e) {
-      console.warn("Gagal fetch warga dari backend, beralih ke fallback.");
+    } catch {
+      console.warn("Backend belum merespons, memakai data fallback.");
     }
 
-    // Fallback jika user belum ada
     return {
       id: cleanId,
       nama: cleanId === "USR-8921" ? "Budi Santoso" : "Warga PANTRA Terdaftar",
@@ -143,9 +149,6 @@ export default function WarungScanPage() {
     };
   };
 
-  // --------------------------------------------------------------------
-  // STEP 1: SCAN QR ID MENGGUNAKAN WEBCAM / UPLOAD / BYPASS
-  // --------------------------------------------------------------------
   const stopIdScanner = useCallback(() => {
     qrControlsRef.current?.stop();
     qrControlsRef.current = null;
@@ -160,9 +163,11 @@ export default function WarungScanPage() {
       try {
         const warga = await fetchWargaFromDB(rawValue);
         setScannedWarga(warga);
+        setCvError(null);
         setStep("SCAN_BOTOL");
       } catch {
         setScannedWarga({ id: rawValue || "USR-8921", nama: "Warga PANTRA", saldoAwal: 0 });
+        setCvError(null);
         setStep("SCAN_BOTOL");
       } finally {
         setIsResolvingWarga(false);
@@ -171,7 +176,6 @@ export default function WarungScanPage() {
     [stopIdScanner]
   );
 
-  // Tombol Bypass: Mengambil akun Warga yang aktif di browser atau default Pak Budi
   const handleBypassScanId = async () => {
     stopIdScanner();
     setIsResolvingWarga(true);
@@ -180,18 +184,19 @@ export default function WarungScanPage() {
       const activeWargaQr = (typeof window !== "undefined" && localStorage.getItem("pantra_user_qr")) || "USR-8921";
       const warga = await fetchWargaFromDB(activeWargaQr);
       setScannedWarga(warga);
+      setCvError(null);
       setStep("SCAN_BOTOL");
     } finally {
       setIsResolvingWarga(false);
     }
   };
 
+  // Step 1: Scanner QR ID
   useEffect(() => {
     if (step !== "SCAN_ID") return;
 
     let cancelled = false;
     const reader = new BrowserQRCodeReader();
-    setIdScanError(null);
 
     reader
       .decodeFromVideoDevice(undefined, videoRef.current ?? undefined, (result, err) => {
@@ -200,7 +205,7 @@ export default function WarungScanPage() {
           handleQrDecoded(result.getText());
         }
         if (err && err.name !== "NotFoundException") {
-          setIdScanError("Kamera sedang memindai QR code warga...");
+          setIdScanError("Arahkan kamera ke kode QR warga...");
         }
       })
       .then((controls) => {
@@ -210,10 +215,13 @@ export default function WarungScanPage() {
         }
         qrControlsRef.current = controls;
         setIsIdScannerReady(true);
+        if (videoRef.current) {
+          videoRef.current.play().catch(() => {});
+        }
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
-          setIdScanError("Tidak dapat mengakses kamera browser. Anda dapat mengunggah foto QR atau menggunakan tombol Bypass.");
+          setIdScanError("Akses kamera terhalang: " + (err?.message || "Izinkan akses kamera di browser."));
         }
       });
 
@@ -237,27 +245,125 @@ export default function WarungScanPage() {
     }
   };
 
-  // --------------------------------------------------------------------
-  // STEP 2: VERIFIKASI COMPUTER VISION (SIMULASI AI + MANUAL OVERRIDE)
-  // --------------------------------------------------------------------
   const stopCvDetection = useCallback(() => {
-    if (cvIntervalRef.current) {
-      clearInterval(cvIntervalRef.current);
-      cvIntervalRef.current = null;
-    }
     cvStreamRef.current?.getTracks().forEach((track) => track.stop());
     cvStreamRef.current = null;
     setIsDetecting(false);
+
+    if (canvasOverlayRef.current) {
+      const ctx = canvasOverlayRef.current.getContext("2d");
+      ctx?.clearRect(0, 0, canvasOverlayRef.current.width, canvasOverlayRef.current.height);
+    }
   }, []);
 
+  // FUNGSI GAMBAR BOUNDING BOX REALTIME
+  const drawBoundingBoxes = (detections: BBoxDetection[], sourceWidth: number, sourceHeight: number) => {
+    const canvas = canvasOverlayRef.current;
+    if (!canvas) return;
+
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, sourceWidth, sourceHeight);
+
+    detections.forEach((item) => {
+      const [x1, y1, x2, y2] = item.bbox;
+      const isGood = item.label === "good_bottle";
+      const boxColor = isGood ? "#10B981" : "#EF4444";
+      const labelText = isGood
+        ? `Layak (${Math.round(item.confidence * 100)}%)`
+        : `Rusak (${Math.round(item.confidence * 100)}%)`;
+
+      // Garis Bounding Box
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = boxColor;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+      // Label Badge
+      ctx.font = "bold 15px sans-serif";
+      const textWidth = ctx.measureText(labelText).width;
+      const badgeY = y1 > 30 ? y1 - 28 : y1;
+
+      ctx.fillStyle = boxColor;
+      ctx.fillRect(x1, badgeY, textWidth + 14, 26);
+
+      // Teks Confidence
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(labelText, x1 + 7, badgeY + 18);
+    });
+  };
+
+  // Kirim Frame ke Backend
+  const captureAndDetect = useCallback(async () => {
+    if (!videoRef.current || videoRef.current.readyState !== 4) return;
+
+    const frameWidth = videoRef.current.videoWidth || 640;
+    const frameHeight = videoRef.current.videoHeight || 480;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = frameWidth;
+    canvas.height = frameHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.drawImage(videoRef.current, 0, 0, frameWidth, frameHeight);
+    const imageBase64 = canvas.toDataURL("image/jpeg", 0.6);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/scan/detect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 }),
+      });
+      const json = await res.json();
+
+      if (json.success) {
+        const detections: BBoxDetection[] = json.detections || [];
+        drawBoundingBoxes(detections, frameWidth, frameHeight);
+
+        const good = json.goodBottles ?? 0;
+        const bad = json.badBottles ?? 0;
+
+        setRejectedBottleCount(bad);
+
+        if (good > 0 || bad > 0) {
+          setAiStatusMessage(
+            `AI: Terdeteksi ${good} botol layak${bad > 0 ? `, ${bad} botol rusak/kotor ditolak` : ""}`
+          );
+        } else {
+          setAiStatusMessage("AI: Arahkan botol ke area kamera");
+        }
+
+        // Hanya botol layak yang masuk hitungan saldo
+        if (good > 0) {
+          setDetectedItems((prev) =>
+            prev.map((item) =>
+              item.id === "pet" ? { ...item, qty: Math.max(item.qty, good) } : item
+            )
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("AI capture tertunda:", err);
+    }
+  }, []);
+
+  // Step 2: Kamera AI
   useEffect(() => {
     if (step !== "SCAN_BOTOL") return;
 
     let cancelled = false;
-    setCvError(null);
 
     navigator.mediaDevices
-      ?.getUserMedia({ video: { facingMode: "environment" } })
+      ?.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      })
       .then((stream) => {
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
@@ -266,30 +372,14 @@ export default function WarungScanPage() {
         cvStreamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
         }
         setIsDetecting(true);
-
-        // Simulasi deteksi botol bertahap tiap 2.5 detik
-        cvIntervalRef.current = setInterval(() => {
-          setDetectedItems((prev) => {
-            const targetId: ItemId = Math.random() > 0.35 ? "pet" : "kaleng";
-            return prev.map((item) =>
-              item.id === targetId ? { ...item, qty: item.qty + 1 } : item
-            );
-          });
-        }, 2500);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
-          setIsDetecting(true);
-          cvIntervalRef.current = setInterval(() => {
-            setDetectedItems((prev) => {
-              const targetId: ItemId = Math.random() > 0.35 ? "pet" : "kaleng";
-              return prev.map((item) =>
-                item.id === targetId ? { ...item, qty: item.qty + 1 } : item
-              );
-            });
-          }, 2000);
+          setCvError("Gagal membuka kamera: " + (err.message || "Akses kamera ditolak."));
+          setIsDetecting(false);
         }
       });
 
@@ -299,7 +389,17 @@ export default function WarungScanPage() {
     };
   }, [step, stopCvDetection]);
 
-  // Kontrol manual penambahan/pengurangan item
+  // Interval deteksi tiap 1.8 detik
+  useEffect(() => {
+    if (step !== "SCAN_BOTOL" || !isDetecting) return;
+
+    const timer = setInterval(() => {
+      captureAndDetect();
+    }, 1800);
+
+    return () => clearInterval(timer);
+  }, [step, isDetecting, captureAndDetect]);
+
   const handleAdjustQty = (id: ItemId, delta: number) => {
     setDetectedItems((prev) =>
       prev.map((item) =>
@@ -311,8 +411,12 @@ export default function WarungScanPage() {
   const handleBackToScanId = () => {
     stopCvDetection();
     setDetectedItems(INITIAL_ITEMS);
+    setRejectedBottleCount(0);
     setScannedWarga(null);
     setScanCompletedAt(null);
+    setIdScanError(null);
+    setCvError(null);
+    setAiStatusMessage(null);
     setStep("SCAN_ID");
   };
 
@@ -324,7 +428,10 @@ export default function WarungScanPage() {
 
   const handleUlangScan = () => {
     setDetectedItems(INITIAL_ITEMS);
+    setRejectedBottleCount(0);
     setScanCompletedAt(null);
+    setCvError(null);
+    setAiStatusMessage(null);
     setStep("SCAN_BOTOL");
   };
 
@@ -337,9 +444,6 @@ export default function WarungScanPage() {
     }
   };
 
-  // --------------------------------------------------------------------
-  // STEP 3: SUBMIT KE DATABASE SUPABASE (POST /api/scan/verify)
-  // --------------------------------------------------------------------
   const handleSubmitDisbursement = async () => {
     if (pinCode.length < 4) {
       setDisbursementError("PIN warung minimal 4 digit.");
@@ -353,11 +457,9 @@ export default function WarungScanPage() {
       const petCount = detectedItems.find((i) => i.id === "pet")?.qty || 0;
       const kalengCount = detectedItems.find((i) => i.id === "kaleng")?.qty || 0;
       const totalCount = petCount + kalengCount;
-
       const targetQr = scannedWarga?.id || "USR-8921";
 
-      // Eksekusi API Verifikasi Botol ke Backend
-      const res = await fetch("http://localhost:4000/api/scan/verify", {
+      const res = await fetch(`${API_BASE_URL}/api/scan/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -370,7 +472,7 @@ export default function WarungScanPage() {
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.message || "Gagal memproses setoran ke database.");
+        throw new Error(json.message || "Gagal mencatat transaksi ke database.");
       }
 
       setSuccessInfo({
@@ -383,7 +485,7 @@ export default function WarungScanPage() {
       setPinCode("");
       setShowSuccessPopup(true);
     } catch (err: any) {
-      setDisbursementError(err.message || "PIN salah atau terjadi gangguan koneksi ke server.");
+      setDisbursementError(err.message || "PIN salah atau server backend belum terjangkau.");
     } finally {
       setIsSubmittingDisbursement(false);
     }
@@ -399,12 +501,12 @@ export default function WarungScanPage() {
     <div className="relative min-h-screen w-full bg-[#E8EDF3] font-sans overflow-x-hidden selection:bg-[#52C3BF] selection:text-[#0B424F]">
       <div className="flex flex-col md:flex-row min-h-screen">
         
-        {/* ================= 1. SIDEBAR (Desktop Only) ================= */}
+        {/* SIDEBAR DESKTOP */}
         <div className="hidden md:block shrink-0">
           <Sidebar role="warung" customItems={warungMenuItems} />
         </div>
 
-        {/* ================= 2. HEADER MOBILE ================= */}
+        {/* HEADER MOBILE */}
         <div className="block md:hidden w-full sticky top-0 z-30 pt-3 px-3 sm:px-4 backdrop-blur-md">
           <div className="flex w-full items-center justify-between px-4 py-3 bg-[linear-gradient(180deg,#1F6A76_0%,#0B424F_100%)] rounded-[18px] shadow-md border border-[#52C3BF]/20 text-white">
             <Link href="/" className="flex items-center gap-2">
@@ -483,17 +585,15 @@ export default function WarungScanPage() {
           )}
         </div>
 
-        {/* ================= 3. MAIN CONTENT AREA ================= */}
+        {/* MAIN CONTENT */}
         <div className="flex-1 flex flex-col min-w-0">
-          
-          {/* Topbar Header Desktop */}
           <header className="hidden md:flex w-full h-[84px] bg-white px-8 py-4 justify-between items-center shadow-[0px_5px_11px_rgba(182,194,206,0.1)] z-10 border-b border-slate-200">
             <div className="flex flex-col justify-center gap-0.5">
               <h1 className="text-[#0B424F] text-xl font-bold font-['Mona_Sans'] flex items-center gap-2">
                 Stasiun Scanner Mitra Warung 📷
               </h1>
               <p className="text-[#36959B] text-xs font-normal font-['Mona_Sans']">
-                Validasi identitas warga dan hitung material setoran daur ulang secara otomatis
+                Validasi identitas warga dan hitung material setoran daur ulang secara otomatis via AI
               </p>
             </div>
 
@@ -516,12 +616,11 @@ export default function WarungScanPage() {
             </div>
           </header>
 
-          {/* Body Scanner */}
           <main
             className="p-4 md:p-6 lg:p-8 flex flex-col lg:flex-row gap-6 max-w-[1440px] w-full mx-auto font-['Mona_Sans']"
             aria-label="Scan QR PANTRA"
           >
-            {/* =============== STEP 1: SCAN QR ID WARGA =============== */}
+            {/* STEP 1: SCAN QR ID WARGA */}
             {step === "SCAN_ID" && (
               <section className="flex-1 min-h-[600px] bg-white rounded-[22px] p-6 shadow-sm border border-slate-100 flex flex-col gap-5 animate-fadeIn">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -543,10 +642,15 @@ export default function WarungScanPage() {
                 </div>
 
                 <div className="w-full flex-1 p-6 bg-[#E6F5F4] rounded-2xl border border-[#52C3BF] flex flex-col justify-between items-center gap-6 min-h-[460px]">
-                  
-                  {/* Viewfinder Box */}
                   <div className="relative w-full max-w-[420px] aspect-square rounded-2xl overflow-hidden border-4 border-[#0B424F] bg-[#0B424F] shadow-lg">
-                    <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+                      className="w-full h-full object-cover"
+                    />
 
                     {!isIdScannerReady && !idScanError && (
                       <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0B424F]/85 text-white">
@@ -573,7 +677,6 @@ export default function WarungScanPage() {
                     </div>
                   )}
 
-                  {/* Tombol Upload QR File Alternatif */}
                   <div className="w-full flex flex-col items-center gap-3">
                     <input
                       ref={fileInputRef}
@@ -598,15 +701,13 @@ export default function WarungScanPage() {
                       Format QR resmi: <strong className="font-mono text-[#0B424F]">USR-XXXX</strong>
                     </span>
                   </div>
-
                 </div>
               </section>
             )}
 
-            {/* =============== STEP 2: VERIFIKASI COMPUTER VISION =============== */}
+            {/* STEP 2: SCAN BOTOL REALTIME AI */}
             {step === "SCAN_BOTOL" && (
               <>
-                {/* Kamera AI Scanner */}
                 <section className="flex-1 min-h-[580px] bg-white rounded-[22px] p-6 shadow-sm border border-slate-100 flex flex-col gap-4 animate-fadeIn">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-3">
@@ -618,41 +719,74 @@ export default function WarungScanPage() {
                       >
                         <ArrowLeft className="w-4 h-4" />
                       </button>
-                      <h2 className="text-[#0B424F] text-lg font-bold">Deteksi Botol AI</h2>
+                      <h2 className="text-[#0B424F] text-lg font-bold">Deteksi Botol AI (PyTorch YOLO)</h2>
                     </div>
 
                     <span className="text-xs bg-[#E8F6F5] text-teal-800 font-bold px-3 py-1 rounded-lg">
-                      {totalItemTerdeteksi} Item Terhitung
+                      {totalItemTerdeteksi} Botol Layak Terhitung
                     </span>
                   </div>
 
                   <p className="text-slate-500 text-xs">
-                    Kamera mensimulasikan model computer vision. Gunakan juga kontrol cepat di bawah untuk menambah/mengurangi botol.
+                    Model memverifikasi bentuk botol secara realtime. Hanya botol dengan kriteria layak yang akan dihitung sebagai saldo.
                   </p>
 
                   <div className="relative w-full rounded-2xl overflow-hidden border-4 border-[#0B424F] bg-[#0B424F] flex-1 min-h-[360px]">
-                    <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+                      className="w-full h-full object-cover"
+                    />
+
+                    {/* OVERLAY BOUNDING BOX YOLO */}
+                    <canvas
+                      ref={canvasOverlayRef}
+                      className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+                    />
 
                     {!isDetecting && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0B424F]/85 text-white">
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0B424F]/85 text-white z-20">
                         <Loader2 className="w-7 h-7 animate-spin text-[#52C3BF]" />
-                        <span className="text-xs">Menghubungkan stream kamera...</span>
+                        <span className="text-xs">Menghubungkan stream kamera AI...</span>
                       </div>
                     )}
 
                     {isDetecting && (
-                      <div className="absolute top-4 left-4 px-3.5 py-1.5 bg-[#52C3BF] rounded-full text-white text-xs font-bold flex items-center gap-2 shadow-md">
-                        <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                        AI Mendeteksi Objek Realtime
+                      <div className="absolute top-4 left-4 flex flex-col gap-2 z-20">
+                        <div className="px-3.5 py-1.5 bg-[#52C3BF] rounded-full text-white text-xs font-bold flex items-center gap-2 shadow-md">
+                          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                          YOLO Bounding Box Aktif
+                        </div>
+
+                        {aiStatusMessage && (
+                          <div className="px-3 py-1.5 bg-black/75 backdrop-blur-md rounded-xl text-white text-[11px] font-medium flex items-center gap-2 border border-white/20">
+                            <Sparkles className="w-3.5 h-3.5 text-[#52C3BF]" />
+                            <span>{aiStatusMessage}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* NOTIFIKASI BOTOL DITOLAK (MERAH) */}
+                    {rejectedBottleCount > 0 && (
+                      <div className="absolute bottom-4 inset-x-4 p-3 bg-red-600/90 backdrop-blur-md text-white text-xs rounded-xl flex items-center justify-center gap-2 z-20 shadow-lg font-semibold animate-pulse">
+                        <AlertTriangle className="w-4 h-4 text-amber-300" />
+                        <span>{rejectedBottleCount} Botol Rusak/Ditolak (Kualitas Tidak Memenuhi Standar)</span>
+                      </div>
+                    )}
+
+                    {cvError && (
+                      <div className="absolute bottom-4 inset-x-4 p-3 bg-red-600/90 text-white text-xs rounded-xl text-center z-20">
+                        {cvError}
                       </div>
                     )}
                   </div>
                 </section>
 
-                {/* Ringkasan & Kontrol Jumlah Botol */}
                 <div className="w-full lg:w-[420px] flex flex-col gap-5 shrink-0">
-                  
-                  {/* Card Profil Warga Terpindai */}
                   <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col gap-3">
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Identitas Penyetor</span>
                     <div className="flex items-center justify-between">
@@ -666,9 +800,11 @@ export default function WarungScanPage() {
                     </div>
                   </section>
 
-                  {/* Card Kontrol Manual & Kalkulasi */}
                   <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4 flex-1">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Material Terdeteksi</span>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Material Terverifikasi</span>
+                      <span className="text-[10px] text-slate-400">Kontrol Manual Diizinkan</span>
+                    </div>
 
                     <div className="flex flex-col gap-3">
                       {detectedItems.map((item) => (
@@ -706,7 +842,6 @@ export default function WarungScanPage() {
                       ))}
                     </div>
 
-                    {/* Estimasi Kalkulasi Saldo */}
                     <div className="p-4 bg-[#E8F6F5] rounded-xl border border-[#52C3BF]/30 flex flex-col gap-2 mt-auto">
                       <div className="flex justify-between items-center text-xs">
                         <span className="text-slate-600 font-medium">Estimasi Saldo Warga:</span>
@@ -741,7 +876,7 @@ export default function WarungScanPage() {
               </>
             )}
 
-            {/* =============== STEP 3: KONFIRMASI SETORAN & PENCAIRAN =============== */}
+            {/* STEP 3: KONFIRMASI TRANSAKSI */}
             {step === "KONFIRMASI" && (
               <>
                 <div className="w-full lg:w-[360px] flex flex-col gap-5 shrink-0">
@@ -817,7 +952,7 @@ export default function WarungScanPage() {
         </div>
       </div>
 
-      {/* ================= MODAL PIN PENCAIRAN SALDO ================= */}
+      {/* MODAL PIN PENCAIRAN SALDO */}
       {showDisbursementModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
           <div className="w-[384px] md:w-[420px] bg-white rounded-2xl p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100 font-['Poppins']">
@@ -905,7 +1040,7 @@ export default function WarungScanPage() {
         </div>
       )}
 
-      {/* ================= POP-UP SUKSES TRANSAKSI ================= */}
+      {/* POP-UP SUKSES TRANSAKSI */}
       {showSuccessPopup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn font-['Poppins']">
           <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl p-7 flex flex-col items-center text-center relative border border-slate-100">
@@ -936,7 +1071,7 @@ export default function WarungScanPage() {
                 <span className="font-mono font-bold text-[#36959B]">{scannedWarga?.id}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Total Botol:</span>
+                <span className="text-slate-500">Total Botol Layak:</span>
                 <span className="font-bold text-[#0B424F]">{totalItemTerdeteksi} Item</span>
               </div>
               <div className="flex justify-between border-t border-slate-200 pt-2 font-bold">
