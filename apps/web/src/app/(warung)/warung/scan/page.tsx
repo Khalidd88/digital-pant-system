@@ -31,6 +31,7 @@ import {
 
 import vectorLogo from "@/assets/Vector.png";
 
+// Dynamic API URL: otomatis baca env Vercel saat live, fallback ke localhost:4000 saat dev lokal
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://pantra-production.up.railway.app";
 
 type ItemId = "pet" | "kaleng";
@@ -47,6 +48,12 @@ interface WargaProfile {
   id: string;
   nama: string;
   saldoAwal: number;
+}
+
+interface BBoxDetection {
+  label: string;
+  confidence: number;
+  bbox: [number, number, number, number];
 }
 
 const INITIAL_ITEMS: DetectedItem[] = [
@@ -87,7 +94,8 @@ export default function WarungScanPage() {
   const [detectedItems, setDetectedItems] = useState<DetectedItem[]>(INITIAL_ITEMS);
   const [rejectedBottleCount, setRejectedBottleCount] = useState(0);
   const [isDetecting, setIsDetecting] = useState(false);
-  const [aiStatusMessage, setAiStatusMessage] = useState<string | null>("AI: Arahkan botol ke kamera untuk pemindaian...");
+  const [cvError, setCvError] = useState<string | null>(null);
+  const [aiStatusMessage, setAiStatusMessage] = useState<string | null>(null);
   const [scanCompletedAt, setScanCompletedAt] = useState<Date | null>(null);
 
   // Tahap 3: Pencairan Saldo & PIN
@@ -99,14 +107,17 @@ export default function WarungScanPage() {
   const [successInfo, setSuccessInfo] = useState<{ earnedWarga: number; earnedWarung: number; newBalance: number } | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasOverlayRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const qrControlsRef = useRef<IScannerControls | null>(null);
   const cvStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setWarungId(localStorage.getItem("pantra_warung_id") || sessionStorage.getItem("pantra_warung_id") || "WRG-0001");
-      setWarungName(localStorage.getItem("pantra_warung_name") || sessionStorage.getItem("pantra_warung_name") || "Warung Mitra Bu Tejo");
+      const savedWarungId = localStorage.getItem("pantra_warung_id") || "WRG-0001";
+      const savedWarungName = localStorage.getItem("pantra_warung_name") || "Warung Mitra";
+      setWarungId(savedWarungId);
+      setWarungName(savedWarungName);
     }
   }, []);
 
@@ -119,13 +130,23 @@ export default function WarungScanPage() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/user/${cleanId}`, { cache: "no-store" });
       const json = await res.json();
+
       if (json.success && json.data) {
-        return { id: json.data.qrId, nama: json.data.name || json.data.fullName || "Warga PANTRA", saldoAwal: json.data.balance || 0 };
+        return {
+          id: json.data.qrId,
+          nama: json.data.name,
+          saldoAwal: json.data.balance || 0,
+        };
       }
     } catch {
-      console.warn("Menggunakan profil warga cadangan.");
+      console.warn("Backend belum merespons, memakai data fallback.");
     }
-    return { id: cleanId, nama: "Budi Santoso", saldoAwal: 15000 };
+
+    return {
+      id: cleanId,
+      nama: cleanId === "USR-8921" ? "Budi Santoso" : "Warga PANTRA Terdaftar",
+      saldoAwal: 0,
+    };
   };
 
   const stopIdScanner = useCallback(() => {
@@ -134,101 +155,268 @@ export default function WarungScanPage() {
     setIsIdScannerReady(false);
   }, []);
 
-  const handleQrDecoded = useCallback(async (rawValue: string) => {
-    stopIdScanner();
-    setIsResolvingWarga(true);
-    const warga = await fetchWargaFromDB(rawValue);
-    setScannedWarga(warga);
-    setIsResolvingWarga(false);
-    setStep("SCAN_BOTOL");
-  }, [stopIdScanner]);
+  const handleQrDecoded = useCallback(
+    async (rawValue: string) => {
+      stopIdScanner();
+      setIsResolvingWarga(true);
+      setIdScanError(null);
+      try {
+        const warga = await fetchWargaFromDB(rawValue);
+        setScannedWarga(warga);
+        setCvError(null);
+        setStep("SCAN_BOTOL");
+      } catch {
+        setScannedWarga({ id: rawValue || "USR-8921", nama: "Warga PANTRA", saldoAwal: 0 });
+        setCvError(null);
+        setStep("SCAN_BOTOL");
+      } finally {
+        setIsResolvingWarga(false);
+      }
+    },
+    [stopIdScanner]
+  );
 
   const handleBypassScanId = async () => {
     stopIdScanner();
     setIsResolvingWarga(true);
-    const warga = await fetchWargaFromDB("USR-8821");
-    setScannedWarga(warga);
-    setIsResolvingWarga(false);
-    setStep("SCAN_BOTOL");
+    setIdScanError(null);
+    try {
+      const activeWargaQr = (typeof window !== "undefined" && localStorage.getItem("pantra_user_qr")) || "USR-8921";
+      const warga = await fetchWargaFromDB(activeWargaQr);
+      setScannedWarga(warga);
+      setCvError(null);
+      setStep("SCAN_BOTOL");
+    } finally {
+      setIsResolvingWarga(false);
+    }
   };
 
   // Step 1: Scanner QR ID
   useEffect(() => {
     if (step !== "SCAN_ID") return;
+
     let cancelled = false;
     const reader = new BrowserQRCodeReader();
 
-    reader.decodeFromVideoDevice(undefined, videoRef.current ?? undefined, (result, err) => {
-      if (cancelled) return;
-      if (result) handleQrDecoded(result.getText());
-      if (err && err.name !== "NotFoundException") setIdScanError("Mencari QR ID warga...");
-    }).then((controls) => {
-      if (cancelled) { controls.stop(); return; }
-      qrControlsRef.current = controls;
-      setIsIdScannerReady(true);
-      videoRef.current?.play().catch(() => {});
-    }).catch(() => {
-      if (!cancelled) setIdScanError("Kamera tidak dapat diakses. Gunakan tombol Bypass.");
-    });
+    reader
+      .decodeFromVideoDevice(undefined, videoRef.current ?? undefined, (result, err) => {
+        if (cancelled) return;
+        if (result) {
+          handleQrDecoded(result.getText());
+        }
+        if (err && err.name !== "NotFoundException") {
+          setIdScanError("Arahkan kamera ke kode QR warga...");
+        }
+      })
+      .then((controls) => {
+        if (cancelled) {
+          controls.stop();
+          return;
+        }
+        qrControlsRef.current = controls;
+        setIsIdScannerReady(true);
+        if (videoRef.current) {
+          videoRef.current.play().catch(() => {});
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setIdScanError("Akses kamera terhalang: " + (err?.message || "Izinkan akses kamera di browser."));
+        }
+      });
 
-    return () => { cancelled = true; stopIdScanner(); };
+    return () => {
+      cancelled = true;
+      stopIdScanner();
+    };
   }, [step, handleQrDecoded, stopIdScanner]);
+
+  const handleUploadQrFile = async (file: File) => {
+    setIdScanError(null);
+    setIsResolvingWarga(true);
+    try {
+      const reader = new BrowserQRCodeReader();
+      const imageUrl = URL.createObjectURL(file);
+      const result = await reader.decodeFromImageUrl(imageUrl);
+      URL.revokeObjectURL(imageUrl);
+      await handleQrDecoded(result.getText());
+    } catch {
+      await handleQrDecoded("USR-8921");
+    }
+  };
 
   const stopCvDetection = useCallback(() => {
     cvStreamRef.current?.getTracks().forEach((track) => track.stop());
     cvStreamRef.current = null;
     setIsDetecting(false);
+
+    if (canvasOverlayRef.current) {
+      const ctx = canvasOverlayRef.current.getContext("2d");
+      ctx?.clearRect(0, 0, canvasOverlayRef.current.width, canvasOverlayRef.current.height);
+    }
   }, []);
 
-  // FUNGSI AUTO-DETEKSI CERDAS (DIJAMIN LANGSUNG MUNCUL QTY-NYA)
-  const runSmartAiDetection = () => {
-    setAiStatusMessage("AI: Memindai objek botol plastik & kaleng...");
-    setTimeout(() => {
-      setDetectedItems([
-        { id: "pet", label: "Botol Plastik PET (Layak)", qty: 3, rate: 500 },
-        { id: "kaleng", label: "Kaleng Aluminium", qty: 2, rate: 800 },
-      ]);
-      setRejectedBottleCount(1);
-      setAiStatusMessage("AI: Berhasil mendeteksi 3 Botol PET, 2 Kaleng (1 Ditolak)");
-    }, 600);
+  // FUNGSI GAMBAR BOUNDING BOX REALTIME
+  const drawBoundingBoxes = (detections: BBoxDetection[], sourceWidth: number, sourceHeight: number) => {
+    const canvas = canvasOverlayRef.current;
+    if (!canvas) return;
+
+    canvas.width = sourceWidth;
+    canvas.height = sourceHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, sourceWidth, sourceHeight);
+
+    detections.forEach((item) => {
+      const [x1, y1, x2, y2] = item.bbox;
+      const isGood = item.label === "good_bottle";
+      const boxColor = isGood ? "#10B981" : "#EF4444";
+      const labelText = isGood
+        ? `Layak (${Math.round(item.confidence * 100)}%)`
+        : `Rusak (${Math.round(item.confidence * 100)}%)`;
+
+      // Garis Bounding Box
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = boxColor;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+      // Label Badge
+      ctx.font = "bold 15px sans-serif";
+      const textWidth = ctx.measureText(labelText).width;
+      const badgeY = y1 > 30 ? y1 - 28 : y1;
+
+      ctx.fillStyle = boxColor;
+      ctx.fillRect(x1, badgeY, textWidth + 14, 26);
+
+      // Teks Confidence
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(labelText, x1 + 7, badgeY + 18);
+    });
   };
+
+  // Kirim Frame ke Backend
+  const captureAndDetect = useCallback(async () => {
+    if (!videoRef.current || videoRef.current.readyState !== 4) return;
+
+    const frameWidth = videoRef.current.videoWidth || 640;
+    const frameHeight = videoRef.current.videoHeight || 480;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = frameWidth;
+    canvas.height = frameHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.drawImage(videoRef.current, 0, 0, frameWidth, frameHeight);
+    const imageBase64 = canvas.toDataURL("image/jpeg", 0.6);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/scan/detect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64 }),
+      });
+      const json = await res.json();
+
+      if (json.success) {
+        const detections: BBoxDetection[] = json.detections || [];
+        drawBoundingBoxes(detections, frameWidth, frameHeight);
+
+        const good = json.goodBottles ?? 0;
+        const bad = json.badBottles ?? 0;
+
+        setRejectedBottleCount(bad);
+
+        if (good > 0 || bad > 0) {
+          setAiStatusMessage(
+            `AI: Terdeteksi ${good} botol layak${bad > 0 ? `, ${bad} botol rusak/kotor ditolak` : ""}`
+          );
+        } else {
+          setAiStatusMessage("AI: Arahkan botol ke area kamera");
+        }
+
+        // Hanya botol layak yang masuk hitungan saldo
+        if (good > 0) {
+          setDetectedItems((prev) =>
+            prev.map((item) =>
+              item.id === "pet" ? { ...item, qty: Math.max(item.qty, good) } : item
+            )
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("AI capture tertunda:", err);
+    }
+  }, []);
 
   // Step 2: Kamera AI
   useEffect(() => {
     if (step !== "SCAN_BOTOL") return;
+
     let cancelled = false;
 
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } })
+    navigator.mediaDevices
+      ?.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      })
       .then((stream) => {
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         cvStreamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(() => {});
         }
         setIsDetecting(true);
-        // Otomatis jalankan deteksi setelah kamera menyala 1.5 detik
-        setTimeout(() => runSmartAiDetection(), 1500);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!cancelled) {
-          setIsDetecting(true);
-          runSmartAiDetection();
+          setCvError("Gagal membuka kamera: " + (err.message || "Akses kamera ditolak."));
+          setIsDetecting(false);
         }
       });
 
-    return () => { cancelled = true; stopCvDetection(); };
+    return () => {
+      cancelled = true;
+      stopCvDetection();
+    };
   }, [step, stopCvDetection]);
+
+  // Interval deteksi tiap 1.8 detik
+  useEffect(() => {
+    if (step !== "SCAN_BOTOL" || !isDetecting) return;
+
+    const timer = setInterval(() => {
+      captureAndDetect();
+    }, 1800);
+
+    return () => clearInterval(timer);
+  }, [step, isDetecting, captureAndDetect]);
 
   const handleAdjustQty = (id: ItemId, delta: number) => {
     setDetectedItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item))
+      prev.map((item) =>
+        item.id === id ? { ...item, qty: Math.max(0, item.qty + delta) } : item
+      )
     );
   };
 
   const handleBackToScanId = () => {
     stopCvDetection();
     setDetectedItems(INITIAL_ITEMS);
+    setRejectedBottleCount(0);
+    setScannedWarga(null);
+    setScanCompletedAt(null);
+    setIdScanError(null);
+    setCvError(null);
+    setAiStatusMessage(null);
     setStep("SCAN_ID");
   };
 
@@ -238,181 +426,417 @@ export default function WarungScanPage() {
     setStep("KONFIRMASI");
   };
 
-  const handlePinPress = (val: string) => {
+  const handleUlangScan = () => {
+    setDetectedItems(INITIAL_ITEMS);
+    setRejectedBottleCount(0);
+    setScanCompletedAt(null);
+    setCvError(null);
+    setAiStatusMessage(null);
+    setStep("SCAN_BOTOL");
+  };
+
+  const handlePinPress = (value: string) => {
     setDisbursementError(null);
-    if (val === "delete") setPinCode((p) => p.slice(0, -1));
-    else if (pinCode.length < 6) setPinCode((p) => p + val);
+    if (value === "delete") {
+      setPinCode((prev) => prev.slice(0, -1));
+    } else if (pinCode.length < 6) {
+      setPinCode((prev) => prev + value);
+    }
   };
 
   const handleSubmitDisbursement = async () => {
     if (pinCode.length < 4) {
-      setDisbursementError("Masukkan minimal 4 digit PIN.");
+      setDisbursementError("PIN warung minimal 4 digit.");
       return;
     }
 
     setIsSubmittingDisbursement(true);
+    setDisbursementError(null);
+
     try {
-      const pet = detectedItems.find((i) => i.id === "pet")?.qty || 0;
-      const kal = detectedItems.find((i) => i.id === "kaleng")?.qty || 0;
-      
+      const petCount = detectedItems.find((i) => i.id === "pet")?.qty || 0;
+      const kalengCount = detectedItems.find((i) => i.id === "kaleng")?.qty || 0;
+      const totalCount = petCount + kalengCount;
+      const targetQr = scannedWarga?.id || "USR-8921";
+
       const res = await fetch(`${API_BASE_URL}/api/scan/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userQrId: scannedWarga?.id || "USR-8821",
-          material: kal > pet ? "CAN" : "PET",
-          bottleCount: pet + kal,
+          userQrId: targetQr,
+          material: kalengCount > petCount ? "CAN" : "PET",
+          bottleCount: totalCount,
           warungId: warungId,
         }),
       });
 
       const json = await res.json();
-      if (!res.ok && !json.success) throw new Error(json.message || "Gagal mencatat transaksi.");
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || "Gagal mencatat transaksi ke database.");
+      }
 
       setSuccessInfo({
         earnedWarga: totalSaldoWarga,
         earnedWarung: totalKomisiWarung,
-        newBalance: json.data?.newBalance || (scannedWarga?.saldoAwal || 0) + totalSaldoWarga,
+        newBalance: json.data?.newBalance || totalSaldoWarga,
       });
 
       setShowDisbursementModal(false);
       setPinCode("");
       setShowSuccessPopup(true);
-    } catch {
-      setSuccessInfo({ earnedWarga: totalSaldoWarga, earnedWarung: totalKomisiWarung, newBalance: 25000 });
-      setShowDisbursementModal(false);
-      setPinCode("");
-      setShowSuccessPopup(true);
+    } catch (err: any) {
+      setDisbursementError(err.message || "PIN salah atau server backend belum terjangkau.");
     } finally {
       setIsSubmittingDisbursement(false);
     }
+  };
+
+  const handleCloseSuccessPopup = () => {
+    setShowSuccessPopup(false);
+    setSuccessInfo(null);
+    handleBackToScanId();
   };
 
   return (
     <div className="relative min-h-screen w-full bg-[#E8EDF3] font-sans overflow-x-hidden selection:bg-[#52C3BF] selection:text-[#0B424F]">
       <div className="flex flex-col md:flex-row min-h-screen">
         
+        {/* SIDEBAR DESKTOP */}
         <div className="hidden md:block shrink-0">
           <Sidebar role="warung" customItems={warungMenuItems} />
         </div>
 
-        <div className="flex-1 flex flex-col min-w-0">
-          <header className="hidden md:flex w-full h-[84px] bg-white px-8 py-4 justify-between items-center shadow-sm z-10 border-b border-slate-200">
-            <div>
-              <h1 className="text-[#0B424F] text-xl font-bold">Stasiun Scanner Mitra Warung 📷</h1>
-              <p className="text-[#36959B] text-xs">Validasi identitas warga dan hitung material setoran daur ulang secara otomatis via AI</p>
+        {/* HEADER MOBILE */}
+        <div className="block md:hidden w-full sticky top-0 z-30 pt-3 px-3 sm:px-4 backdrop-blur-md">
+          <div className="flex w-full items-center justify-between px-4 py-3 bg-[linear-gradient(180deg,#1F6A76_0%,#0B424F_100%)] rounded-[18px] shadow-md border border-[#52C3BF]/20 text-white">
+            <Link href="/" className="flex items-center gap-2">
+              <Image src={vectorLogo} alt="PANTRA Logo" className="h-7 w-auto object-contain" priority />
+            </Link>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setNotificationOpen((prev) => !prev)}
+                className="p-2 bg-[#235D6B] hover:bg-[#36959B] border border-[#52C3BF] rounded-[10px] text-white transition-colors"
+              >
+                <Bell className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+                className="p-2 bg-[#235D6B] hover:bg-[#36959B] border border-[#52C3BF] rounded-[10px] text-white transition-colors"
+              >
+                {isMobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+              </button>
             </div>
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-[10px] border border-[#36959B] text-[#0B424F]">
-              <User className="w-5 h-5 text-[#0B424F]" />
-              <div className="flex flex-col text-left">
-                <span className="text-sm font-semibold leading-tight">{warungName}</span>
-                <span className="text-[10px] text-[#36959B] font-mono">{warungId}</span>
+          </div>
+
+          {notificationOpen && (
+            <div className="mt-2 bg-white text-[#0B424F] p-3 text-xs rounded-xl shadow-lg border border-slate-100">
+              Tidak ada notifikasi baru.
+            </div>
+          )}
+
+          {isMobileMenuOpen && (
+            <div className="mt-2.5 bg-[#0B424F] text-white p-5 rounded-[22px] flex flex-col gap-3 shadow-2xl border border-[#235D6B] animate-fadeIn">
+              <div className="flex items-center gap-3 px-3.5 py-2 bg-[#235D6B] rounded-xl text-white">
+                <User className="w-5 h-5 text-[#52C3BF]" />
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold">{warungName}</span>
+                  <span className="text-[10px] text-[#52C3BF] font-mono">{warungId}</span>
+                </div>
+              </div>
+
+              <nav className="flex flex-col gap-2">
+                {warungMenuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = item.href === "/warung/scan";
+                  return (
+                    <Link
+                      key={item.label}
+                      href={item.href}
+                      onClick={() => setIsMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-2.5 rounded-[12px] text-sm font-medium transition-all ${
+                        isActive
+                          ? "bg-[#52C3BF] text-white font-bold shadow-sm"
+                          : "bg-[#235D6B] hover:bg-[#1F6A76] text-white"
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+
+                <Link
+                  href="/warung/login"
+                  onClick={() => {
+                    localStorage.clear();
+                    setIsMobileMenuOpen(false);
+                  }}
+                  className="flex items-center gap-3 px-4 py-2.5 bg-[#235D6B] hover:bg-red-950/40 text-red-300 rounded-[12px] text-sm mt-1"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Log Out</span>
+                </Link>
+              </nav>
+            </div>
+          )}
+        </div>
+
+        {/* MAIN CONTENT */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <header className="hidden md:flex w-full h-[84px] bg-white px-8 py-4 justify-between items-center shadow-[0px_5px_11px_rgba(182,194,206,0.1)] z-10 border-b border-slate-200">
+            <div className="flex flex-col justify-center gap-0.5">
+              <h1 className="text-[#0B424F] text-xl font-bold font-['Mona_Sans'] flex items-center gap-2">
+                Stasiun Scanner Mitra Warung 📷
+              </h1>
+              <p className="text-[#36959B] text-xs font-normal font-['Mona_Sans']">
+                Validasi identitas warga dan hitung material setoran daur ulang secara otomatis via AI
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setNotificationOpen((prev) => !prev)}
+                className="p-3 bg-[#D2F0EE] hover:bg-[#BAE5E2] rounded-[10px] text-[#0B424F] transition-colors"
+              >
+                <Bell className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-2.5 px-3 py-2 rounded-[10px] border-[1.4px] border-[#36959B] text-[#0B424F]">
+                <User className="w-5 h-5 text-[#0B424F]" />
+                <div className="flex flex-col text-left">
+                  <span className="text-sm font-semibold leading-tight">{warungName}</span>
+                  <span className="text-[10px] text-[#36959B] font-mono leading-none">{warungId}</span>
+                </div>
               </div>
             </div>
           </header>
 
-          <main className="p-4 md:p-8 flex flex-col lg:flex-row gap-6 max-w-[1440px] w-full mx-auto">
+          <main
+            className="p-4 md:p-6 lg:p-8 flex flex-col lg:flex-row gap-6 max-w-[1440px] w-full mx-auto font-['Mona_Sans']"
+            aria-label="Scan QR PANTRA"
+          >
+            {/* STEP 1: SCAN QR ID WARGA */}
             {step === "SCAN_ID" && (
-              <section className="flex-1 bg-white rounded-[22px] p-6 shadow-sm border border-slate-100 flex flex-col gap-5">
-                <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-                  <h2 className="text-[#0B424F] text-lg font-bold">Pindai QR ID Warga</h2>
-                  <button onClick={handleBypassScanId} className="px-4 py-2 bg-[#FFF8E1] border border-[#FF8D28] rounded-xl flex items-center gap-2 text-[#E3A810] text-xs font-bold shadow-xs">
-                    <Zap className="w-4 h-4" />
-                    <span>Bypass Scan ID (Instan)</span>
+              <section className="flex-1 min-h-[600px] bg-white rounded-[22px] p-6 shadow-sm border border-slate-100 flex flex-col gap-5 animate-fadeIn">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <h2 className="text-[#0B424F] text-lg font-bold">Pindai QR ID Warga</h2>
+                    <p className="text-[#36959B] text-xs mt-0.5">
+                      Arahkan kamera ke layar ponsel warga untuk membaca kode identitas digital
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleBypassScanId}
+                    className="px-4 py-2 bg-[#FFF8E1] hover:bg-[#FFF1C6] border border-[#FF8D28] rounded-xl flex items-center gap-2 text-[#E3A810] text-xs font-bold transition-all shadow-xs"
+                  >
+                    <Zap className="w-4 h-4 text-[#FF8D28]" />
+                    <span>Bypass Scan ID (Uji Coba Cepat)</span>
                   </button>
                 </div>
 
-                <div className="w-full flex-1 p-6 bg-[#E6F5F4] rounded-2xl border border-[#52C3BF] flex flex-col items-center gap-6">
-                  <div className="relative w-full max-w-[420px] aspect-square rounded-2xl overflow-hidden border-4 border-[#0B424F] bg-[#0B424F]">
-                    <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
-                    {isResolvingWarga && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0B424F]/90 text-white">
+                <div className="w-full flex-1 p-6 bg-[#E6F5F4] rounded-2xl border border-[#52C3BF] flex flex-col justify-between items-center gap-6 min-h-[460px]">
+                  <div className="relative w-full max-w-[420px] aspect-square rounded-2xl overflow-hidden border-4 border-[#0B424F] bg-[#0B424F] shadow-lg">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+                      className="w-full h-full object-cover"
+                    />
+
+                    {!isIdScannerReady && !idScanError && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0B424F]/85 text-white">
                         <Loader2 className="w-8 h-8 animate-spin text-[#52C3BF]" />
-                        <span className="text-xs">Memuat profil warga...</span>
+                        <span className="text-xs font-medium">Mengaktifkan kamera pemindai...</span>
                       </div>
                     )}
+
+                    {isResolvingWarga && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0B424F]/90 text-white">
+                        <Loader2 className="w-8 h-8 animate-spin text-[#52C3BF]" />
+                        <span className="text-xs font-semibold">Mengecek data warga di Supabase...</span>
+                      </div>
+                    )}
+
+                    {isIdScannerReady && !isResolvingWarga && (
+                      <div className="absolute inset-6 border-2 border-dashed border-[#52C3BF] rounded-xl pointer-events-none animate-pulse" />
+                    )}
                   </div>
-                  <button onClick={handleBypassScanId} className="px-6 py-3 bg-[#52C3BF] text-white font-bold text-xs rounded-xl shadow-md cursor-pointer">
-                    Lanjut ke Scan Botol AI
-                  </button>
+
+                  {idScanError && (
+                    <div className="w-full max-w-[440px] px-4 py-2.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-800 text-xs font-medium text-center">
+                      {idScanError}
+                    </div>
+                  )}
+
+                  <div className="w-full flex flex-col items-center gap-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleUploadQrFile(file);
+                        e.target.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="h-11 px-6 bg-white hover:bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-center gap-2 text-[#0B424F] text-xs font-bold transition-colors shadow-xs"
+                    >
+                      <Upload className="w-4 h-4 text-[#36959B]" />
+                      <span>Unggah Gambar QR Warga</span>
+                    </button>
+                    <span className="text-[11px] text-slate-500">
+                      Format QR resmi: <strong className="font-mono text-[#0B424F]">USR-XXXX</strong>
+                    </span>
+                  </div>
                 </div>
               </section>
             )}
 
+            {/* STEP 2: SCAN BOTOL REALTIME AI */}
             {step === "SCAN_BOTOL" && (
               <>
-                <section className="flex-1 bg-white rounded-[22px] p-6 shadow-sm border border-slate-100 flex flex-col gap-4">
+                <section className="flex-1 min-h-[580px] bg-white rounded-[22px] p-6 shadow-sm border border-slate-100 flex flex-col gap-4 animate-fadeIn">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-3">
-                      <button onClick={handleBackToScanId} className="p-2 bg-[#E6F5F4] rounded-xl text-[#0B424F]">
+                      <button
+                        type="button"
+                        onClick={handleBackToScanId}
+                        className="p-2 bg-[#E6F5F4] hover:bg-[#D2F0EE] rounded-xl text-[#0B424F] transition-colors"
+                        title="Kembali ke Scan QR ID"
+                      >
                         <ArrowLeft className="w-4 h-4" />
                       </button>
-                      <h2 className="text-[#0B424F] text-lg font-bold">Deteksi Botol AI (YOLO)</h2>
+                      <h2 className="text-[#0B424F] text-lg font-bold">Deteksi Botol AI (PyTorch YOLO)</h2>
                     </div>
+
                     <span className="text-xs bg-[#E8F6F5] text-teal-800 font-bold px-3 py-1 rounded-lg">
                       {totalItemTerdeteksi} Botol Layak Terhitung
                     </span>
                   </div>
 
+                  <p className="text-slate-500 text-xs">
+                    Model memverifikasi bentuk botol secara realtime. Hanya botol dengan kriteria layak yang akan dihitung sebagai saldo.
+                  </p>
+
                   <div className="relative w-full rounded-2xl overflow-hidden border-4 border-[#0B424F] bg-[#0B424F] flex-1 min-h-[360px]">
-                    <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      onLoadedMetadata={() => videoRef.current?.play().catch(() => {})}
+                      className="w-full h-full object-cover"
+                    />
 
-                    {/* FAKE YOLO GREEN BOUNDING BOX SIMULATION */}
-                    <div className="absolute top-16 left-20 w-28 h-48 border-4 border-emerald-400 rounded-lg pointer-events-none flex items-start p-1 bg-emerald-500/10 z-10">
-                      <span className="bg-emerald-500 text-white text-[10px] px-1 font-bold rounded">PET Layak (98%)</span>
-                    </div>
-                    <div className="absolute top-24 right-28 w-24 h-40 border-4 border-emerald-400 rounded-lg pointer-events-none flex items-start p-1 bg-emerald-500/10 z-10">
-                      <span className="bg-emerald-500 text-white text-[10px] px-1 font-bold rounded">Kaleng (95%)</span>
-                    </div>
+                    {/* OVERLAY BOUNDING BOX YOLO */}
+                    <canvas
+                      ref={canvasOverlayRef}
+                      className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10"
+                    />
 
-                    <div className="absolute top-4 left-4 flex flex-col gap-2 z-20">
-                      <div className="px-3 py-1.5 bg-[#52C3BF] rounded-full text-white text-xs font-bold flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                        YOLO Bounding Box Aktif
+                    {!isDetecting && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0B424F]/85 text-white z-20">
+                        <Loader2 className="w-7 h-7 animate-spin text-[#52C3BF]" />
+                        <span className="text-xs">Menghubungkan stream kamera AI...</span>
                       </div>
-                      {aiStatusMessage && (
-                        <div className="px-3 py-1.5 bg-black/75 rounded-xl text-white text-[11px] font-medium flex items-center gap-2">
-                          <Sparkles className="w-3.5 h-3.5 text-[#52C3BF]" />
-                          <span>{aiStatusMessage}</span>
-                        </div>
-                      )}
-                    </div>
+                    )}
 
+                    {isDetecting && (
+                      <div className="absolute top-4 left-4 flex flex-col gap-2 z-20">
+                        <div className="px-3.5 py-1.5 bg-[#52C3BF] rounded-full text-white text-xs font-bold flex items-center gap-2 shadow-md">
+                          <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                          YOLO Bounding Box Aktif
+                        </div>
+
+                        {aiStatusMessage && (
+                          <div className="px-3 py-1.5 bg-black/75 backdrop-blur-md rounded-xl text-white text-[11px] font-medium flex items-center gap-2 border border-white/20">
+                            <Sparkles className="w-3.5 h-3.5 text-[#52C3BF]" />
+                            <span>{aiStatusMessage}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* NOTIFIKASI BOTOL DITOLAK (MERAH) */}
                     {rejectedBottleCount > 0 && (
-                      <div className="absolute bottom-4 inset-x-4 p-3 bg-red-600/90 text-white text-xs rounded-xl flex items-center justify-center gap-2 font-semibold z-20">
+                      <div className="absolute bottom-4 inset-x-4 p-3 bg-red-600/90 backdrop-blur-md text-white text-xs rounded-xl flex items-center justify-center gap-2 z-20 shadow-lg font-semibold animate-pulse">
                         <AlertTriangle className="w-4 h-4 text-amber-300" />
-                        <span>{rejectedBottleCount} Botol Rusak/Kotor Ditolak Sistem AI</span>
+                        <span>{rejectedBottleCount} Botol Rusak/Ditolak (Kualitas Tidak Memenuhi Standar)</span>
+                      </div>
+                    )}
+
+                    {cvError && (
+                      <div className="absolute bottom-4 inset-x-4 p-3 bg-red-600/90 text-white text-xs rounded-xl text-center z-20">
+                        {cvError}
                       </div>
                     )}
                   </div>
-
-                  <button onClick={runSmartAiDetection} className="py-2.5 bg-[#E6F5F4] hover:bg-[#D2F0EE] text-[#0B424F] text-xs font-bold rounded-xl border border-[#52C3BF] cursor-pointer transition-colors">
-                    ✨ Jalankan Ulang Deteksi AI Otomatis
-                  </button>
                 </section>
 
                 <div className="w-full lg:w-[420px] flex flex-col gap-5 shrink-0">
                   <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col gap-3">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">Identitas Penyetor</span>
-                    <div>
-                      <h3 className="text-base font-bold text-[#0B424F]">{scannedWarga?.nama}</h3>
-                      <span className="text-xs font-mono text-[#36959B]">{scannedWarga?.id}</span>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Identitas Penyetor</span>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-[#0B424F]">{scannedWarga?.nama}</h3>
+                        <span className="text-xs font-mono text-[#36959B]">{scannedWarga?.id}</span>
+                      </div>
+                      <span className="text-xs bg-emerald-50 text-emerald-700 font-bold px-2.5 py-1 rounded-md border border-emerald-200">
+                        Akun Valid
+                      </span>
                     </div>
                   </section>
 
                   <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col gap-4 flex-1">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">Material Terverifikasi</span>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Material Terverifikasi</span>
+                      <span className="text-[10px] text-slate-400">Kontrol Manual Diizinkan</span>
+                    </div>
+
                     <div className="flex flex-col gap-3">
                       {detectedItems.map((item) => (
-                        <div key={item.id} className="p-3 bg-[#F8FAFC] rounded-xl border border-slate-100 flex items-center justify-between">
+                        <div
+                          key={item.id}
+                          className="p-3 bg-[#F8FAFC] rounded-xl border border-slate-100 flex items-center justify-between"
+                        >
                           <div>
                             <div className="text-xs font-bold text-[#0B424F]">{item.label}</div>
-                            <div className="text-[11px] text-slate-400">{formatRupiah(item.rate)} / item</div>
+                            <div className="text-[11px] text-slate-400 font-medium">
+                              {formatRupiah(item.rate)} / item
+                            </div>
                           </div>
+
                           <div className="flex items-center gap-2">
-                            <button onClick={() => handleAdjustQty(item.id, -1)} className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center cursor-pointer"><Minus className="w-3.5 h-3.5" /></button>
-                            <span className="w-8 text-center text-sm font-bold text-[#0B424F]">{item.qty}</span>
-                            <button onClick={() => handleAdjustQty(item.id, 1)} className="w-8 h-8 rounded-lg bg-[#52C3BF] text-white flex items-center justify-center cursor-pointer"><Plus className="w-3.5 h-3.5" /></button>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjustQty(item.id, -1)}
+                              className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 flex items-center justify-center text-slate-600 active:scale-95"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="w-8 text-center text-sm font-bold text-[#0B424F]">
+                              {item.qty}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjustQty(item.id, 1)}
+                              className="w-8 h-8 rounded-lg bg-[#52C3BF] hover:bg-teal-400 flex items-center justify-center text-white active:scale-95 shadow-xs"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -424,81 +848,253 @@ export default function WarungScanPage() {
                         <span className="text-base font-bold text-emerald-600">+{formatRupiah(totalSaldoWarga)}</span>
                       </div>
                       <div className="flex justify-between items-center text-xs border-t border-teal-200/50 pt-2">
-                        <span className="text-slate-600 font-medium">Komisi Warung (10%):</span>
+                        <span className="text-slate-600 font-medium">Estimasi Komisi Warung (10%):</span>
                         <span className="text-sm font-bold text-teal-700">+{formatRupiah(totalKomisiWarung)}</span>
                       </div>
                     </div>
 
-                    <button onClick={handleFinishScan} disabled={totalItemTerdeteksi === 0} className="w-full py-3.5 bg-[#52C3BF] hover:bg-teal-400 text-white font-bold text-xs rounded-xl shadow-sm disabled:opacity-50 cursor-pointer">
-                      Selesai Scan ({totalItemTerdeteksi} Botol)
-                    </button>
+                    <div className="flex gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleBackToScanId}
+                        className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <RefreshCcw className="w-3.5 h-3.5" />
+                        <span>Batal</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleFinishScan}
+                        disabled={totalItemTerdeteksi === 0}
+                        className="flex-1 py-3 bg-[#52C3BF] hover:bg-teal-400 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all shadow-sm"
+                      >
+                        Selesai Scan ({totalItemTerdeteksi})
+                      </button>
+                    </div>
                   </section>
                 </div>
               </>
             )}
 
+            {/* STEP 3: KONFIRMASI TRANSAKSI */}
             {step === "KONFIRMASI" && (
-              <section className="flex-1 bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col gap-6">
-                <div>
-                  <h2 className="text-xl font-bold text-[#0B424F]">Konfirmasi Pencairan Saldo</h2>
-                  <p className="text-xs text-slate-400 mt-0.5">Penyetor: {scannedWarga?.nama} ({scannedWarga?.id})</p>
+              <>
+                <div className="w-full lg:w-[360px] flex flex-col gap-5 shrink-0">
+                  <section className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col gap-3">
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Identitas Penyetor</span>
+                    <div>
+                      <h3 className="text-lg font-bold text-[#0B424F]">{scannedWarga?.nama}</h3>
+                      <span className="text-xs font-mono font-bold bg-[#E8F6F5] text-[#0B424F] px-2.5 py-0.5 rounded-md border border-[#52C3BF]/30">
+                        {scannedWarga?.id}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-400 mt-2">
+                      Waktu Pemindaian: {scanCompletedAt ? scanCompletedAt.toLocaleTimeString() : "-"} WIB
+                    </span>
+                  </section>
                 </div>
 
-                <div className="p-5 bg-[#E8F6F5] rounded-2xl border border-[#52C3BF]/40 flex flex-col gap-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-[#0B424F]">Total Saldo Masuk ke Warga:</span>
-                    <span className="text-xl font-extrabold text-[#0B424F]">{formatRupiah(totalSaldoWarga)}</span>
+                <section className="flex-1 bg-white rounded-2xl p-6 shadow-sm border border-slate-100 flex flex-col gap-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-[#0B424F]">Konfirmasi Setoran &amp; Top Up Saldo</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Periksa rincian sebelum mencairkan saldo langsung ke dompet digital warga
+                    </p>
                   </div>
-                </div>
 
-                <div className="flex gap-3">
-                  <button onClick={() => setStep("SCAN_BOTOL")} className="py-3 px-6 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl cursor-pointer">Ulangi</button>
-                  <button onClick={() => setShowDisbursementModal(true)} className="flex-1 py-3.5 bg-[#52C3BF] text-white font-bold text-sm rounded-xl shadow-md cursor-pointer">
-                    Masukkan PIN Warung &amp; Cairkan
-                  </button>
-                </div>
-              </section>
+                  <div className="flex flex-col gap-3 border-y border-slate-100 py-4">
+                    {detectedItems
+                      .filter((i) => i.qty > 0)
+                      .map((item) => (
+                        <div key={item.id} className="flex justify-between items-center text-xs">
+                          <span className="font-semibold text-slate-600">
+                            {item.qty}x {item.label}
+                          </span>
+                          <span className="font-bold text-emerald-600">
+                            +{formatRupiah(item.qty * item.rate)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div className="p-5 bg-[#E8F6F5] rounded-2xl border border-[#52C3BF]/40 flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-[#0B424F]">Total Saldo Masuk ke Warga:</span>
+                      <span className="text-xl font-extrabold text-[#0B424F]">{formatRupiah(totalSaldoWarga)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs border-t border-teal-200/50 pt-2">
+                      <span className="font-semibold text-teal-800">Komisi Otomatis Mitra Warung (10%):</span>
+                      <span className="font-bold text-teal-700">+{formatRupiah(totalKomisiWarung)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-auto pt-2">
+                    <button
+                      type="button"
+                      onClick={handleUlangScan}
+                      className="py-3 px-6 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-colors"
+                    >
+                      Ulangi Scan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDisbursementModal(true)}
+                      className="flex-1 py-3.5 bg-[#52C3BF] hover:bg-teal-400 text-white font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                    >
+                      <span>Cairkan Saldo ke Database</span>
+                    </button>
+                  </div>
+                </section>
+              </>
             )}
+
           </main>
         </div>
       </div>
 
+      {/* MODAL PIN PENCAIRAN SALDO */}
       {showDisbursementModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-[384px] bg-white rounded-2xl p-6 flex flex-col items-center gap-5 shadow-2xl">
-            <h3 className="text-[#0B424F] text-lg font-bold">Masukkan PIN Warung</h3>
-            <div className="flex gap-2.5 my-2">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className={`w-4 h-4 rounded-full border-2 border-[#52C3BF] ${i < pinCode.length ? "bg-[#52C3BF]" : ""}`} />
-              ))}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn">
+          <div className="w-[384px] md:w-[420px] bg-white rounded-2xl p-6 md:p-8 flex flex-col items-center gap-5 shadow-2xl relative border border-slate-100 font-['Poppins']">
+            <button
+              type="button"
+              onClick={() => {
+                setShowDisbursementModal(false);
+                setPinCode("");
+                setDisbursementError(null);
+              }}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-full flex flex-col items-center gap-2 text-center">
+              <Lock className="w-9 h-9 text-[#52C3BF] mb-1" />
+              <h3 className="text-[#0B424F] text-lg font-bold">Masukkan PIN Warung</h3>
+              <p className="text-[#36959B] text-xs">
+                Saldo {formatRupiah(totalSaldoWarga)} akan langsung disuntikkan ke akun Supabase milik {scannedWarga?.nama}.
+              </p>
+
+              <div className="flex gap-2.5 my-3">
+                {[...Array(6)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-3.5 h-3.5 rounded-full border-2 border-[#52C3BF] transition-all ${
+                      i < pinCode.length ? "bg-[#52C3BF] scale-110" : "bg-transparent"
+                    }`}
+                  />
+                ))}
+              </div>
+
+              {disbursementError && (
+                <p className="text-red-500 text-xs font-semibold">{disbursementError}</p>
+              )}
             </div>
-            {disbursementError && <p className="text-red-500 text-xs">{disbursementError}</p>}
-            <div className="grid grid-cols-3 gap-2 w-full max-w-[240px]">
-              {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "hapus"].map((num) => (
-                <button key={num} onClick={() => num === "hapus" ? handlePinPress("delete") : handlePinPress(num)} className="h-11 bg-slate-100 rounded-xl font-bold text-sm cursor-pointer">
-                  {num}
+
+            <div className="w-full max-w-[260px]">
+              <div className="grid grid-cols-3 gap-2.5">
+                {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => handlePinPress(num)}
+                    className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold active:scale-95"
+                  >
+                    {num}
+                  </button>
+                ))}
+                <div />
+                <button
+                  type="button"
+                  onClick={() => handlePinPress("0")}
+                  className="h-11 bg-slate-100 hover:bg-slate-200 rounded-xl flex items-center justify-center text-[#0B424F] text-base font-bold"
+                >
+                  0
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => handlePinPress("delete")}
+                  className="h-11 bg-rose-50 hover:bg-rose-100 rounded-xl flex items-center justify-center text-rose-500 text-xs font-bold"
+                >
+                  Hapus
+                </button>
+              </div>
             </div>
-            <button onClick={handleSubmitDisbursement} className="w-full py-3 bg-[#52C3BF] text-white font-bold text-xs rounded-xl cursor-pointer">
-              Konfirmasi &amp; Suntik Saldo
+
+            <button
+              type="button"
+              onClick={handleSubmitDisbursement}
+              disabled={pinCode.length < 4 || isSubmittingDisbursement}
+              className="w-full py-3.5 bg-[#52C3BF] hover:bg-[#36959B] disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all shadow-md flex items-center justify-center gap-2 mt-1"
+            >
+              {isSubmittingDisbursement ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Menyimpan ke Supabase...</span>
+                </>
+              ) : (
+                <span>Konfirmasi Top Up Saldo</span>
+              )}
             </button>
           </div>
         </div>
       )}
 
+      {/* POP-UP SUKSES TRANSAKSI */}
       {showSuccessPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl p-7 flex flex-col items-center text-center">
-            <CheckCircle2 className="w-12 h-12 text-[#52C3BF] mb-2" />
-            <h3 className="text-[#0B424F] text-xl font-bold mb-1">Setoran Berhasil!</h3>
-            <p className="text-xs text-slate-500 mb-4">Saldo warga dan komisi warung telah ditambahkan.</p>
-            <button onClick={() => { setShowSuccessPopup(false); setStep("SCAN_ID"); }} className="w-full py-3 bg-[#52C3BF] text-white font-bold text-xs rounded-xl cursor-pointer">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fadeIn font-['Poppins']">
+          <div className="w-full max-w-[420px] bg-white rounded-3xl shadow-2xl p-7 flex flex-col items-center text-center relative border border-slate-100">
+            <button
+              type="button"
+              onClick={handleCloseSuccessPopup}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-16 h-16 rounded-full bg-[#E6F5F4] flex items-center justify-center mb-4 text-[#52C3BF]">
+              <CheckCircle2 className="w-10 h-10 text-[#52C3BF]" />
+            </div>
+
+            <h3 className="text-[#0B424F] text-xl font-bold mb-1">Setoran Berhasil Diverifikasi!</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Data transaksi telah resmi tercatat di PostgreSQL Supabase.
+            </p>
+
+            <div className="w-full bg-[#F8FAFC] rounded-2xl p-4 border border-slate-100 flex flex-col gap-2 text-xs text-left mb-5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Penyetor:</span>
+                <span className="font-bold text-[#0B424F]">{scannedWarga?.nama}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">QR ID:</span>
+                <span className="font-mono font-bold text-[#36959B]">{scannedWarga?.id}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Botol Layak:</span>
+                <span className="font-bold text-[#0B424F]">{totalItemTerdeteksi} Item</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-2 font-bold">
+                <span className="text-[#0B424F]">Saldo Warga Ditambahkan:</span>
+                <span className="text-emerald-600">+{formatRupiah(successInfo?.earnedWarga || totalSaldoWarga)}</span>
+              </div>
+              <div className="flex justify-between text-teal-700 font-semibold">
+                <span>Komisi Warung Masuk:</span>
+                <span>+{formatRupiah(successInfo?.earnedWarung || totalKomisiWarung)}</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCloseSuccessPopup}
+              className="w-full py-3 bg-[#52C3BF] hover:bg-[#36959B] text-white font-bold text-xs rounded-xl transition-colors shadow-md"
+            >
               Scan Warga Berikutnya
             </button>
           </div>
         </div>
       )}
+
     </div>
   );
 }
