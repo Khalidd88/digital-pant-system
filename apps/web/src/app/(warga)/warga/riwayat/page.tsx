@@ -152,8 +152,8 @@ export default function RiwayatAktivitasPage() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedQr = localStorage.getItem("pantra_user_qr") || "USR-8821";
-      const savedUserStr = localStorage.getItem("pantra_user");
+      const savedQr = localStorage.getItem("pantra_user_qr") || sessionStorage.getItem("pantra_user_qr") || "USR-8821";
+      const savedUserStr = localStorage.getItem("pantra_user") || sessionStorage.getItem("pantra_user");
       let activeName = "Warga PANTRA";
 
       if (savedUserStr) {

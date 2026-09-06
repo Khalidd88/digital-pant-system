@@ -82,6 +82,7 @@ export default function Sidebar({ role = "warga", customItems }: SidebarProps) {
   const handleLogout = () => {
     if (typeof window !== "undefined") {
       localStorage.clear();
+      sessionStorage.clear();
     }
   };
 

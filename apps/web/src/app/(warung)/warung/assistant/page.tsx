@@ -93,8 +93,8 @@ export default function WarungAssistantPage() {
     if (typeof window === "undefined") return;
 
     // Ambil identitas warung yang sedang login
-    const savedWarungName = localStorage.getItem("pantra_warung_name");
-    const savedWarungId = localStorage.getItem("pantra_warung_id");
+    const savedWarungName = localStorage.getItem("pantra_warung_name") || sessionStorage.getItem("pantra_warung_name");
+    const savedWarungId = localStorage.getItem("pantra_warung_id") || sessionStorage.getItem("pantra_warung_id");
     const savedWarungUser = localStorage.getItem("pantra_warung_user");
 
     let currentName = savedWarungName || "Mitra Warung";
@@ -142,7 +142,7 @@ export default function WarungAssistantPage() {
     if (!text.trim() || isTyping) return;
 
     const userText = text.trim();
-    const currentId = (typeof window !== "undefined" && localStorage.getItem("pantra_warung_id")) || warungId;
+    const currentId = (typeof window !== "undefined" && (localStorage.getItem("pantra_warung_id") || sessionStorage.getItem("pantra_warung_id"))) || warungId;
 
     const newUserMsg: ChatMessage = {
       id: Date.now().toString(),
