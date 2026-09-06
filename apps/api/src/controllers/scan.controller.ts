@@ -3,6 +3,31 @@ import { spawn } from "bun";
 import path from "path";
 import fs from "fs";
 
+// Cari path executable python secara dinamis tanpa bikin server crash
+function resolvePythonBinary(): string {
+  const possiblePaths = [
+    process.env.PYTHON_PATH,
+    '/app/venv/bin/python',
+    '/app/venv/bin/python3',
+    '/usr/bin/python3',
+    path.join(process.cwd(), 'src/ml/venv/bin/python'),
+    path.join(__dirname, '../ml/venv/bin/python'),
+    'python3',
+  ].filter(Boolean) as string[];
+
+  for (const p of possiblePaths) {
+    if (p === 'python3' || fs.existsSync(p)) {
+      console.log(`[ML] Menggunakan Python runtime di: ${p}`);
+      return p;
+    }
+  }
+
+  console.warn('[ML WARNING] Python venv tidak ditemukan, menggunakan fallback runner.');
+  return 'python3';
+}
+
+const PYTHON_BIN = resolvePythonBinary();
+
 export const detectBottleQuality = async (req: Request, res: ExpressResponse): Promise<void> => {
   try {
     const { imageBase64 } = req.body;
@@ -20,15 +45,8 @@ export const detectBottleQuality = async (req: Request, res: ExpressResponse): P
     const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
     fs.writeFileSync(tempFilePath, Buffer.from(cleanBase64, "base64"));
 
-    // 2. Path eksekusi Python venv dan predict.py
-    const pythonBin = path.resolve(__dirname, "../ml/venv/bin/python");
+    // 2. Path eksekusi script predict.py
     const scriptPath = path.resolve(__dirname, "../ml/predict.py");
-
-    if (!fs.existsSync(pythonBin)) {
-      console.error("❌ Python venv tidak ditemukan di:", pythonBin);
-      res.status(500).json({ success: false, message: `Python venv tidak ditemukan: ${pythonBin}` });
-      return;
-    }
 
     if (!fs.existsSync(scriptPath)) {
       console.error("❌ predict.py tidak ditemukan di:", scriptPath);
@@ -36,8 +54,8 @@ export const detectBottleQuality = async (req: Request, res: ExpressResponse): P
       return;
     }
 
-    // 3. Eksekusi proses Python
-    const proc = spawn([pythonBin, scriptPath, tempFilePath], {
+    // 3. Eksekusi proses Python menggunakan PYTHON_BIN hasil deteksi dinamis
+    const proc = spawn([PYTHON_BIN, scriptPath, tempFilePath], {
       stdout: "pipe",
       stderr: "pipe",
     });
