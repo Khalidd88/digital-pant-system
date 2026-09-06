@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -16,8 +16,6 @@ import {
   Clock,
   CheckCircle2,
   Smartphone,
-  QrCode,
-  ArrowDown,
   Menu,
   X,
   Sparkles,
@@ -25,6 +23,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Smile,
+  ShieldCheck,
+  Calculator,
+  Globe,
 } from "lucide-react";
 
 // Asset Imports
@@ -43,7 +44,8 @@ import ellipse1022 from "@/assets/Ellipse 1022.png";
 const NAVIGATION_ITEMS = [
   { label: "Home", href: "#home" },
   { label: "Tentang", href: "#tentang" },
-  { label: "Mitra Warung", href: "#mitra-warung" },
+  { label: "Cara Kerja", href: "#cara-kerja" },
+  { label: "Mitra Warung", href: "/warung/login" },
 ];
 
 const AI_FEATURES = [
@@ -115,7 +117,7 @@ const WORKFLOW_STEPS = [
     step: "02",
     title: "QR Scan",
     description: "Tunjukkan QR ID PANTRA kamu",
-    icon: QrCode,
+    icon: Smartphone,
   },
   {
     step: "03",
@@ -137,26 +139,49 @@ const WORKFLOW_STEPS = [
   },
 ];
 
+// DATA GAMBAR WEB UNTUK SCROLL MULTIPLE CARDS
 const COLLECTION_PROGRAMS = [
   {
-    title: "Pengumpulan Botol",
-    description: "Kapolsek Bojonggenteng, saat membereskan botol sisa air mineral.",
+    tag: "KRISIS LINGKUNGAN",
+    title: "Pencemaran Laut & Pesisir",
+    description: "Jutaan ton sampah botol plastik mencemari lautan dan mengancam ekosistem pesisir Indonesia.",
+    image: "https://images.unsplash.com/photo-1621451537084-482c73073a0f?auto=format&fit=crop&w=800&q=80",
   },
   {
-    title: "Mengambil Botol",
-    description: "Upaya pengumpulan botol bekas di kawasan pemukiman warga.",
+    tag: "DARURAT SAMPAH",
+    title: "Penumpukan Sampah Tanah",
+    description: "Sampah botol plastik tak terurai menumpuk di pemukiman dan lahan terbuka warga.",
+    image: "https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=800&q=80",
   },
   {
-    title: "Pencemaran Laut",
-    description: "Sampah Plastik Mencemari Laut & Pesisir Perkotaan.",
+    tag: "AKSI BERSAMA",
+    title: "Pengumpulan Botol Warga",
+    description: "Gerakan bersama masyarakat mengumpulkan botol plastik bekas untuk didaur ulang secara tertib.",
+    image: "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=800&q=80",
   },
   {
-    title: "Posko Cianjur",
-    description: "Distribusi insentif daur ulang langsung tanpa kendala.",
+    tag: "EKOSISTEM WARUNG",
+    title: "Mitra Warung PANTRA",
+    description: "Pemberdayaan warung kelontong lokal sebagai hub pemindaian dan penukaran saldo instan.",
+    image: "https://images.unsplash.com/photo-1578916171728-46686eac8d58?auto=format&fit=crop&w=800&q=80",
   },
   {
-    title: "Posko Sumedang",
-    description: "Pemberdayaan mitra warung lokal sebagai jaringan DRS.",
+    tag: "JARINGAN SIRKULAR",
+    title: "Pusat Pengolahan Bersama",
+    description: "Distribusi hasil daur ulang yang terintegrasi secara cepat, efisien, dan berdampak nyata.",
+    image: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    tag: "INOVASI HIJAU",
+    title: "Daur Ulang Terintegrasi",
+    description: "Mengolah kembali botol plastik menjadi bahan baku sekunder industri daur ulang modern.",
+    image: "https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    tag: "EKONOMI BERKELANJUTAN",
+    title: "Insentif Nyata Warga",
+    description: "Meningkatkan daya beli warga lokal melalui program daur ulang berbasis insentif langsung.",
+    image: "https://images.unsplash.com/photo-1559056199-641a0ac8b55e?auto=format&fit=crop&w=800&q=80",
   },
 ];
 
@@ -167,6 +192,27 @@ export default function LandingPage() {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // State Kalkulator
+  const [bottleCount, setBottleCount] = useState<number>(30);
+  const estimatedIncome = bottleCount * 500;
+  const co2Reduced = (bottleCount * 0.08).toFixed(1);
+
+  // AUTO SCROLL INTERVAL
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const interval = setInterval(() => {
+      if (container.scrollLeft + container.clientWidth >= container.scrollWidth - 10) {
+        container.scrollTo({ left: 0, behavior: "smooth" });
+      } else {
+        container.scrollBy({ left: 300, behavior: "smooth" });
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleRoleSelection = (role: UserRole) => {
     setSelectedRole(role);
@@ -186,7 +232,7 @@ export default function LandingPage() {
 
   const handleScroll = (direction: "left" | "right") => {
     if (scrollContainerRef.current) {
-      const scrollAmount = 280;
+      const scrollAmount = 310;
       scrollContainerRef.current.scrollBy({
         left: direction === "left" ? -scrollAmount : scrollAmount,
         behavior: "smooth",
@@ -197,7 +243,7 @@ export default function LandingPage() {
   return (
     <div className="relative min-h-screen w-full bg-[#F3FEFD] text-[#264653] font-sans overflow-x-hidden selection:bg-[#52C3BF] selection:text-[#0B424F]">
       
-      {/* ===== DEKORASI BACKGROUND ELLIPSE & GLOW RAME ===== */}
+      {/* Background Ornaments */}
       <div className="absolute top-[200px] left-[-80px] w-[350px] md:w-[500px] pointer-events-none opacity-40 z-0">
         <Image src={ellipse1018} alt="" className="w-full h-auto" priority />
       </div>
@@ -214,12 +260,11 @@ export default function LandingPage() {
         <Image src={ellipse1022} alt="" className="w-full h-auto" priority />
       </div>
 
-      {/* Radial Soft Glow Background Spots */}
       <div className="absolute top-[480px] left-[10%] w-[320px] h-[320px] bg-[#8AD4D0] rounded-full blur-[110px] pointer-events-none opacity-50" />
       <div className="absolute top-[1350px] right-[8%] w-[380px] h-[380px] bg-[#52C3BF] rounded-full blur-[140px] pointer-events-none opacity-40" />
       <div className="absolute top-[2200px] left-[15%] w-[350px] h-[350px] bg-[#8AD4D0] rounded-full blur-[120px] pointer-events-none opacity-45" />
 
-      {/* 1. HEADER NAVIGATION */}
+      {/* 1. Header Navigation */}
       <header className="sticky top-0 z-50 w-full flex justify-center pt-5 px-4 backdrop-blur-sm">
         <div className="flex w-full max-w-[1040px] items-center justify-between px-8 py-3.5 bg-[linear-gradient(180deg,rgba(22,84,99,1)_0%,rgba(11,66,79,1)_100%)] rounded-[20px] shadow-card">
           <Link href="#home" className="flex items-center gap-3">
@@ -246,7 +291,7 @@ export default function LandingPage() {
             href="/warga/login"
             className="hidden md:flex items-center justify-center px-7 py-2.5 bg-[#52C3BF] text-[#F3FEFD] font-semibold text-sm rounded-[15px] hover:bg-teal-400 transition-colors"
           >
-            Login
+            Login Warga
           </Link>
 
           <button
@@ -277,30 +322,35 @@ export default function LandingPage() {
             onClick={() => setIsMenuOpen(false)}
             className="mt-2 text-center py-2 bg-[#52C3BF] text-[#0B424F] font-bold text-sm rounded-[10px]"
           >
-            Login
+            Login Warga
           </Link>
         </div>
       )}
 
-      {/* 2. HERO CONTENT SECTION */}
-      <section id="home" className="relative z-10 flex flex-col items-center text-center pt-12 md:pt-16 pb-6 px-4 max-w-[620px] mx-auto">
-        <h1 className="text-2xl sm:text-4xl md:text-[32px] font-bold text-[#264653] leading-[36px] sm:leading-[44px] mb-4">
-          Botol Plastik Jadi Saldo, Langsung di Warung Terdekat
+      {/* 2. Hero Content Section */}
+      <section id="home" className="relative z-10 flex flex-col items-center text-center pt-12 md:pt-16 pb-6 px-4 max-w-[680px] mx-auto">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1 bg-[#E8F6F5] border border-[#36959B] rounded-full text-xs font-bold text-[#36959B] mb-4">
+          <Sparkles className="w-3.5 h-3.5" />
+          <span>Platform Daur Ulang Berbasis Edge AI #1 di Indonesia</span>
+        </div>
+
+        <h1 className="text-2xl sm:text-4xl md:text-[34px] font-bold text-[#264653] leading-[38px] sm:leading-[46px] mb-4">
+          Ubah Botol Plastik Jadi <span className="text-[#36959B]">Saldo Instan</span> dalam 5 Detik di Warung Terdekat
         </h1>
-        <p className="text-xs sm:text-base text-[#264653] max-w-[500px] mb-8 leading-6">
-          Sistem daur ulang tanpa ribet. Setor botolmu, verifikasi dengan AI, dan dapatkan insentif seketika.
+        <p className="text-xs sm:text-base text-[#264653] max-w-[540px] mb-8 leading-6">
+          Sistem Deposit-Refund tanpa ribet. Setor botolmu, verifikasi otomatis dengan AI, dan cairkan insentif digital seketika.
         </p>
 
-        <a
-          href="#role-selection"
-          className="inline-flex items-center justify-between w-52 p-3.5 bg-[#E8F6F5] text-[#36959B] border border-[#36959B] font-semibold text-sm rounded-[15px] shadow-button-card hover:bg-teal-100 transition-all"
+        <Link
+          href="/warga/login"
+          className="inline-flex items-center justify-between w-56 p-3.5 bg-[#E8F6F5] text-[#36959B] border border-[#36959B] font-semibold text-sm rounded-[15px] shadow-button-card hover:bg-teal-100 transition-all"
         >
           <span>Mulai Setor Botol</span>
-          <ArrowDown className="w-5 h-5 text-[#36959B]" />
-        </a>
+          <ArrowRight className="w-5 h-5 text-[#36959B]" />
+        </Link>
       </section>
 
-      {/* 3. HERO PREVIEW MOCKUP */}
+      {/* 3. Hero Preview Mockup */}
       <section id="platform" className="relative z-10 max-w-[1024px] mx-auto px-4 mt-8 mb-20">
         <div className="absolute right-[-60px] md:right-[-100px] top-[-30px] md:top-[-50px] w-[300px] md:w-[480px] pointer-events-none opacity-40 z-0">
           <Image src={logoDecor} alt="" className="w-full h-auto object-contain" priority />
@@ -348,14 +398,14 @@ export default function LandingPage() {
               <Smartphone className="w-7 h-7 text-[#36959B] shrink-0" />
               <div className="flex flex-col items-start gap-0.5 w-[125px]">
                 <h3 className="font-bold text-[#36959B] text-base leading-normal">Cukup pakai HP</h3>
-                <p className="text-xs text-[#264653] leading-normal font-medium">Cukup kamera HP mitra warung</p>
+                <p className="text-xs text-[#264653] leading-normal font-medium">Kamera HP mitra warung</p>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 4. PLATFORM STATISTICS SECTION */}
+      {/* 4. Platform Statistics */}
       <section id="dampak" className="relative z-10 py-12 px-4 max-w-[1024px] mx-auto text-center mt-6">
         <h2 className="text-2xl sm:text-3xl font-bold text-[#264653] mb-10">
           Mengapa <span className="text-[#43999b]">Pantra?</span>
@@ -384,7 +434,56 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 5. AI VERIFICATION SECTION */}
+      {/* Kalkulator Estimasi Pendapatan Warga */}
+      <section className="relative z-10 py-8 px-4 max-w-[780px] mx-auto">
+        <div className="bg-[linear-gradient(180deg,rgba(22,84,99,1)_0%,rgba(11,66,79,1)_100%)] text-white rounded-[20px] p-6 sm:p-8 shadow-card border border-[#52C3BF]/30">
+          <div className="flex items-center justify-center gap-2 text-[#52C3BF] text-xs font-bold uppercase tracking-wider mb-2">
+            <Calculator className="w-4 h-4" />
+            <span>Kalkulator Potensi Insentif</span>
+          </div>
+          <h3 className="text-lg sm:text-xl font-bold text-center text-white mb-6">
+            Hitung Berapa Saldo yang Bisa Kamu Dapatkan
+          </h3>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center">
+            <div className="flex flex-col gap-3">
+              <label className="text-xs font-medium text-emerald-100 flex justify-between">
+                <span>Setor Botol / Minggu:</span>
+                <span className="font-bold text-[#52C3BF] text-sm">{bottleCount} Botol</span>
+              </label>
+              <input
+                type="range"
+                min="5"
+                max="150"
+                step="5"
+                value={bottleCount}
+                onChange={(e) => setBottleCount(Number(e.target.value))}
+                className="w-full h-2 bg-[#1a6475] rounded-lg appearance-none cursor-pointer accent-[#52C3BF]"
+              />
+              <p className="text-[10px] text-emerald-100/70 italic">
+                *Tukarkan kapan saja di Warung Mitra terdekat.
+              </p>
+            </div>
+
+            <div className="flex justify-around bg-white/10 p-4 rounded-[15px] border border-white/10">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-emerald-200">Estimasi Saldo/Bulan</span>
+                <span className="text-lg font-bold text-[#52C3BF]">
+                  Rp {(estimatedIncome * 4).toLocaleString("id-ID")}
+                </span>
+              </div>
+              <div className="flex flex-col border-l border-white/10 pl-4">
+                <span className="text-[10px] text-emerald-200">Emisi CO₂ Dicegah</span>
+                <span className="text-lg font-bold text-white">
+                  {(Number(co2Reduced) * 4).toFixed(1)} kg
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. AI Verification Section */}
       <section id="fitur" className="relative z-10 py-12 px-4 max-w-[1024px] mx-auto">
         <div className="flex flex-col lg:flex-row items-center justify-between gap-12">
           <div className="w-full lg:w-[330px]">
@@ -424,7 +523,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 6. USER ROLE SELECTION SECTION */}
+      {/* 6. Role Selection Section */}
       <section id="role-selection" className="relative z-10 py-12 px-4 max-w-[746px] mx-auto text-center">
         <h2 className="text-2xl sm:text-3xl font-bold mb-2 leading-[44px]">
           <span className="text-[#264653]">Masuk ke </span>
@@ -433,6 +532,7 @@ export default function LandingPage() {
         <p className="text-sm text-[#264653] mb-8">Pilih peran Anda untuk melanjutkan</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-left">
+          {/* Mitra Warung Card */}
           <article className="flex flex-col items-start justify-center gap-6 px-3.5 py-5 rounded-[14px] shadow-[inset_0px_4px_4px_#ffffff9c] bg-[linear-gradient(180deg,rgba(186,229,226,1)_0%,rgba(82,195,191,1)_100%)]">
             <div className="flex items-start gap-6 w-full">
               <div className="p-2.5 bg-[#F3FEFD] rounded-[15px] shrink-0">
@@ -440,19 +540,20 @@ export default function LandingPage() {
               </div>
               <div className="flex flex-col gap-2.5 flex-1">
                 <h3 className="font-bold text-[#264653] text-lg">Mitra Warung</h3>
-                <p className="text-sm text-[#264653]">Bantu verifikasi botol dan dapatkan saldo</p>
+                <p className="text-sm text-[#264653]">Bantu verifikasi botol dan dapatkan komisi</p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => handleRoleSelection("mitra-warung")}
-              className="flex items-center justify-between px-5 py-3 w-full bg-[#F3FEFD] rounded-[15px] cursor-pointer"
+              className="flex items-center justify-between px-5 py-3 w-full bg-[#F3FEFD] rounded-[15px] cursor-pointer hover:bg-white transition-colors"
             >
-              <span className="font-semibold text-[#36959B] text-sm">Mulai Bermitra</span>
+              <span className="font-semibold text-[#36959B] text-sm">Masuk Mitra Warung</span>
               <ArrowRight className="w-5 h-5 text-[#36959B]" />
             </button>
           </article>
 
+          {/* Warga Card */}
           <article className="flex flex-col items-start justify-center gap-6 px-3.5 py-5 rounded-[14px] shadow-[inset_0px_4px_4px_#ffffff9c] bg-[linear-gradient(180deg,rgba(22,84,99,1)_0%,rgba(11,66,79,1)_100%)]">
             <div className="flex items-start gap-6 w-full">
               <div className="p-2.5 bg-[#3a7a89] rounded-[15px] shrink-0">
@@ -460,22 +561,22 @@ export default function LandingPage() {
               </div>
               <div className="flex flex-col gap-2.5 flex-1 text-white">
                 <h3 className="font-bold text-lg">Warga</h3>
-                <p className="text-sm">Kasih botol bekasmu ke warung dan cairkan saldomu</p>
+                <p className="text-sm text-[#E8F6F5]">Setor botol bekasmu ke warung dan cairkan saldo instan</p>
               </div>
             </div>
             <button
               type="button"
               onClick={() => handleRoleSelection("warga")}
-              className="flex items-center justify-between px-5 py-3 w-full bg-[#52C3BF] rounded-[15px] cursor-pointer"
+              className="flex items-center justify-between px-5 py-3 w-full bg-[#52C3BF] rounded-[15px] cursor-pointer hover:bg-teal-400 transition-colors"
             >
-              <span className="font-semibold text-white text-sm">Mulai Setor Botolmu</span>
+              <span className="font-semibold text-white text-sm">Masuk Portal Warga</span>
               <ArrowRight className="w-5 h-5 text-white" />
             </button>
           </article>
         </div>
       </section>
 
-      {/* 7. WORKFLOW STEPS SECTION (Sesuai Gambar Figma: Box Ikon Ber-Drop Shadow Tanpa Border Card Luar) */}
+      {/* 7. Workflow Steps */}
       <section id="cara-kerja" className="relative z-10 py-12 px-4 max-w-[1024px] mx-auto text-center">
         <h2 className="text-2xl sm:text-3xl font-bold mb-12 leading-[44px]">
           <span className="text-[#264653]">Bagaimana</span>
@@ -487,11 +588,9 @@ export default function LandingPage() {
             const IconComp = step.icon;
             return (
               <div key={step.title} className="flex flex-col items-center gap-4">
-                {/* Box Ikon Putih dengan Drop Shadow Halus */}
                 <div className="w-[100px] h-[100px] sm:w-[110px] sm:h-[110px] bg-white rounded-[24px] shadow-[0_12px_28px_rgba(54,149,151,0.18)] flex items-center justify-center transition-transform hover:-translate-y-1">
                   <IconComp className="w-12 h-12 text-[#52C3BF]" />
                 </div>
-                {/* Label Judul & Deskripsi */}
                 <div className="flex flex-col items-center gap-1 max-w-[160px]">
                   <h3 className="font-bold text-[#264653] text-base">{step.title}</h3>
                   <p className="text-xs text-[#264653] text-center leading-relaxed font-normal opacity-90">{step.description}</p>
@@ -502,16 +601,22 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 8. COLLECTION PROGRAM SECTION */}
-      <section id="tentang" className="relative z-10 py-12 px-4 max-w-[1024px] mx-auto">
-        <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-[76px]">
-          <div className="w-full lg:w-[295px] shrink-0">
-            <h2 className="text-2xl font-bold mb-4 leading-8">
-              <span className="text-[#264653]">Pengumpulan Botol </span>
-              <span className="text-[#36959b]">ke Mitra</span>
+      {/* 8. Collection Program Slider Section (Pakai Tag <img> Biasa - Bebas Diblokir Next.js) */}
+      <section id="tentang" className="relative z-10 py-16 px-4 max-w-[1024px] mx-auto">
+        <div className="flex flex-col lg:flex-row items-start lg:items-center gap-8 lg:gap-[50px]">
+          
+          {/* Left Narrative Panel */}
+          <div className="w-full lg:w-[320px] shrink-0">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#E8F6F5] border border-[#36959B] rounded-full text-xs font-bold text-[#36959B] mb-3">
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Dampak Sirkular Nyata</span>
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4 leading-tight">
+              <span className="text-[#264653]">Dari Sampah Lingkungan </span>
+              <span className="text-[#36959b]">Menjadi Nilai Ekonomi</span>
             </h2>
-            <p className="text-sm sm:text-base text-[#264653] leading-6 mb-6">
-              Setiap botol yang tersalurkan ke mitra merupakan langkah konkrit dalam menjaga lingkungan
+            <p className="text-xs sm:text-sm text-[#264653]/80 leading-relaxed mb-6">
+              Setiap botol plastik yang dikumpulkan membantu mengurangi sampah liar di lingkungan sekaligus mengalirkan insentif digital langsung ke kantong masyarakat.
             </p>
 
             <div className="hidden lg:flex items-center gap-3">
@@ -519,7 +624,7 @@ export default function LandingPage() {
                 type="button"
                 onClick={() => handleScroll("left")}
                 aria-label="Slide Berita ke Kiri"
-                className="w-10 h-10 rounded-full border border-[#36959B] flex items-center justify-center text-[#36959B] hover:bg-[#BAE5E2] transition-colors"
+                className="w-11 h-11 rounded-full border border-[#36959B] flex items-center justify-center text-[#36959B] hover:bg-[#36959B] hover:text-white transition-all shadow-sm cursor-pointer"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
@@ -527,33 +632,54 @@ export default function LandingPage() {
                 type="button"
                 onClick={() => handleScroll("right")}
                 aria-label="Slide Berita ke Kanan"
-                className="w-10 h-10 rounded-full border border-[#36959B] flex items-center justify-center text-[#36959B] hover:bg-[#BAE5E2] transition-colors"
+                className="w-11 h-11 rounded-full border border-[#36959B] flex items-center justify-center text-[#36959B] hover:bg-[#36959B] hover:text-white transition-all shadow-sm cursor-pointer"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
             </div>
           </div>
 
+          {/* Right Scrollable Cards Slider */}
           <div
             ref={scrollContainerRef}
-            className="flex gap-[26px] overflow-x-auto pb-4 scrollbar-none w-full lg:w-[653px] scroll-smooth"
+            className="flex gap-5 overflow-x-auto pb-6 pt-2 scrollbar-none w-full lg:w-[650px] scroll-smooth snap-x snap-mandatory"
           >
             {COLLECTION_PROGRAMS.map((program) => (
               <article
                 key={program.title}
-                className="flex flex-col shrink-0 w-[249px] h-[258px] items-start justify-end p-4 rounded-[20px] shadow-card bg-[linear-gradient(176deg,rgba(22,84,99,0)_0%,rgba(11,66,79,1)_100%)] text-white"
+                className="relative overflow-hidden flex flex-col shrink-0 w-[270px] sm:w-[290px] h-[330px] items-start justify-end p-5 rounded-[24px] shadow-lg border border-[#52C3BF]/20 text-white group snap-start transition-all duration-300 hover:-translate-y-1"
               >
-                <div className="flex flex-col w-[219px] items-start">
-                  <h3 className="font-medium text-xl leading-8 mb-1">{program.title}</h3>
-                  <p className="font-medium text-xs text-white leading-normal">{program.description}</p>
+                <img
+                  src={program.image}
+                  alt={program.title}
+                  className="absolute inset-0 w-full h-full object-cover z-0 transition-transform duration-500 group-hover:scale-110"
+                />
+                
+                <div className="absolute inset-0 z-10 bg-gradient-to-t from-[#0B424F] via-[#0B424F]/60 to-transparent" />
+                <div className="absolute inset-0 z-10 bg-black/15 group-hover:bg-black/0 transition-colors" />
+
+                <div className="absolute top-4 left-4 z-20">
+                  <span className="px-2.5 py-1 bg-[#52C3BF]/90 backdrop-blur-md text-[#0B424F] text-[10px] font-bold tracking-wider uppercase rounded-md shadow-sm">
+                    {program.tag}
+                  </span>
+                </div>
+
+                <div className="relative z-20 flex flex-col w-full items-start">
+                  <h3 className="font-bold text-lg leading-snug mb-1.5 text-white group-hover:text-[#52C3BF] transition-colors">
+                    {program.title}
+                  </h3>
+                  <p className="font-normal text-xs text-emerald-50/90 leading-relaxed line-clamp-3">
+                    {program.description}
+                  </p>
                 </div>
               </article>
             ))}
           </div>
+
         </div>
       </section>
 
-      {/* 9. COMMUNITY IMPACT CARDS */}
+      {/* 9. Community Impact Cards */}
       <section className="relative z-10 py-12 px-4 max-w-[536px] mx-auto text-center">
         <h2 className="text-2xl font-bold mb-8">
           <span className="text-[#0a414f]">Dampak </span>
@@ -591,59 +717,41 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* 10. PARTNER CTA SECTION */}
-      <section className="relative z-10 py-10 px-6 max-w-[720px] mx-auto text-center rounded-[20px] shadow-card my-12 bg-[radial-gradient(50%_50%_at_80%_50%,rgba(232,246,245,1)_0%,rgba(232,246,245,0)_100%),linear-gradient(180deg,rgba(186,229,226,1)_0%,rgba(82,195,191,1)_100%)]">
-        <div className="flex flex-col items-center gap-5 mb-8">
-          <h2 className="font-bold text-[#264653] text-2xl leading-8">
-            Setor Sampah Plastikmu, Ubah jadi Saldo Instan
-          </h2>
-          <p className="text-[#264653] text-base leading-6 max-w-[400px]">
-            Bersama PANTRA dan mitra warung lokal, mari wujudkan lingkungan bersih dari sampah botol plastik sekaligus mendukung ekonomi sirkular.
-          </p>
+      {/* Badge UN SDGs */}
+      <section className="relative z-10 py-6 px-4 max-w-[700px] mx-auto text-center">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-[#36959B]/30 rounded-full text-[11px] font-bold text-[#36959B] mb-3">
+          <Globe className="w-3.5 h-3.5" />
+          <span>Mendukung Sustainable Development Goals (UN SDGs)</span>
         </div>
-        <a
-          href="#role-selection"
-          className="inline-flex items-center justify-between w-52 p-3.5 bg-[#E8F6F5] text-[#36959B] font-semibold text-sm rounded-[15px] border border-[#36959B] mx-auto hover:opacity-90"
-        >
-          <span>Mulai Setor Botol</span>
-          <ArrowDown className="w-5 h-5 text-[#36959B]" />
-        </a>
+        <div className="flex flex-wrap justify-center gap-2">
+          <span className="px-3 py-1 bg-white border border-[#52C3BF]/40 text-[#264653] font-bold text-xs rounded-lg shadow-sm">
+            SDG 8: Pertumbuhan Ekonomi
+          </span>
+          <span className="px-3 py-1 bg-white border border-[#52C3BF]/40 text-[#264653] font-bold text-xs rounded-lg shadow-sm">
+            SDG 11: Kota Berkelanjutan
+          </span>
+          <span className="px-3 py-1 bg-white border border-[#52C3BF]/40 text-[#264653] font-bold text-xs rounded-lg shadow-sm">
+            SDG 12: Konsumsi Bertanggung Jawab
+          </span>
+          <span className="px-3 py-1 bg-white border border-[#52C3BF]/40 text-[#264653] font-bold text-xs rounded-lg shadow-sm">
+            SDG 14: Ekosistem Lautan
+          </span>
+        </div>
       </section>
 
-      {/* 11. SITE FOOTER SECTION */}
-      <footer className="relative z-10 w-full py-[40px] text-white text-center overflow-hidden bg-[linear-gradient(180deg,#165463_0%,#0B424F_100%)]">
-        <div 
-          className="absolute inset-0 pointer-events-none z-0"
-          style={{
-            background: "radial-gradient(70% 120% at 90% 10%, #52C3BF 0%, rgba(82, 195, 191, 0) 100%)",
-            mixBlendMode: "screen",
-            opacity: 0.85
-          }}
-        />
-
-        <div className="absolute right-[-120px] md:right-[-80px] top-1/2 -translate-y-1/2 w-[450px] md:w-[580px] pointer-events-none z-0 opacity-20">
-          <Image
-            src={logoDecor}
-            alt=""
-            className="w-full h-auto object-contain"
-            priority
-          />
-        </div>
-
-        <div className="relative z-10 max-w-[480px] mx-auto flex flex-col items-center gap-5 px-4">
-          <Image
-            src={vectorWhite}
-            alt="Pantra Logo"
-            className="h-[42px] w-auto object-contain"
-          />
-          <p className="text-xs md:text-sm text-[#F3FEFD] leading-relaxed font-normal">
-            Platform desentralisasi Deposit-Refund System (DRS) berbasis Edge AI untuk mengonversi sampah botol dan kaleng menjadi insentif digital di warung terdekat.
-          </p>
-          <p className="text-xs text-[#F3FEFD] font-normal pt-2">
-            @2026 PANTRA Team. All rights reserved.
+      {/* Footer */}
+      <footer className="relative z-10 border-t border-[#36959B]/20 bg-[#0B424F] text-white py-8 px-4 text-center mt-12">
+        <div className="max-w-[1024px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Image src={vectorWhite} alt="PANTRA Logo" className="h-6 w-auto" />
+            <span className="font-bold text-sm tracking-wide">PANTRA Indonesia</span>
+          </div>
+          <p className="text-xs text-[#E8F6F5]/80">
+            &copy; {new Date().getFullYear()} PANTRA - Platform Daur Ulang Berbasis Dual AI & Inklusi Ekonomi.
           </p>
         </div>
       </footer>
+
     </div>
   );
 }

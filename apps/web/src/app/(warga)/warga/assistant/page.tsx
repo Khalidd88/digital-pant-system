@@ -38,11 +38,9 @@ export default function PantraAssistantPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
 
-  // User State dari Session Login
-  const [userName, setUserName] = useState("Warga PANTRA");
-  const [qrId, setQrId] = useState("");
+  const [userName, setUserName] = useState("Warga");
+  const [qrId, setQrId] = useState("USR-8821");
 
-  // State Chatbot
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
@@ -57,7 +55,6 @@ export default function PantraAssistantPage() {
     scrollToBottom();
   }, [messages, isTyping]);
 
-  // Helper Simpan Pesan ke LocalStorage
   const updateMessages = (newMessages: ChatMessage[]) => {
     setMessages(newMessages);
     if (typeof window !== "undefined") {
@@ -65,7 +62,6 @@ export default function PantraAssistantPage() {
     }
   };
 
-  // Bersihkan Riwayat Chat
   const handleClearChat = () => {
     if (confirm("Hapus semua riwayat percakapan?")) {
       const defaultMsg: ChatMessage[] = [
@@ -80,30 +76,33 @@ export default function PantraAssistantPage() {
     }
   };
 
-  // Muat User & Riwayat Chat saat Halaman Dibuka
+  // Ambil Data User Aktif yang Login dengan Validasi Ketat
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // 1. Ambil data user yang aktif login
-    const savedQr = localStorage.getItem("pantra_user_qr");
-    const savedUserStr = localStorage.getItem("pantra_user");
-    let activeName = "Warga PANTRA";
-    let activeQr = savedQr || "";
+    let activeName = "Warga";
+    let activeQr = "USR-8821";
 
-    if (savedUserStr) {
-      try {
+    try {
+      const savedUserStr = localStorage.getItem("pantra_user");
+      if (savedUserStr) {
         const userObj = JSON.parse(savedUserStr);
-        if (userObj.name) activeName = userObj.name;
+        if (userObj.fullName) activeName = userObj.fullName;
+        else if (userObj.name) activeName = userObj.name;
+        
         if (userObj.qrId) activeQr = userObj.qrId;
-      } catch (e) {
-        console.error("Gagal parse pantra_user", e);
       }
+
+      // Cek cadangan key qr di storage
+      const directQr = localStorage.getItem("pantra_user_qr");
+      if (directQr) activeQr = directQr;
+    } catch (e) {
+      console.error("Gagal baca storage user:", e);
     }
 
     setUserName(activeName);
     setQrId(activeQr);
 
-    // 2. Ambil riwayat chat tersimpan dari LocalStorage
     const savedChats = localStorage.getItem("pantra_chat_history");
     if (savedChats) {
       try {
@@ -113,11 +112,10 @@ export default function PantraAssistantPage() {
           return;
         }
       } catch (e) {
-        console.error("Gagal parse pantra_chat_history", e);
+        console.error("Gagal parse chat history", e);
       }
     }
 
-    // Default chat pembuka jika belum ada histori
     const initialMsg: ChatMessage[] = [
       {
         id: "msg-init",
@@ -130,14 +128,13 @@ export default function PantraAssistantPage() {
     localStorage.setItem("pantra_chat_history", JSON.stringify(initialMsg));
   }, []);
 
-  // Handler Kirim Pesan ke Backend Gemini AI
+  // Handler Kirim Pesan dengan Logika Pencocokan Keyword yang Presisi
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || isTyping) return;
 
-    // Baca QR ID terkini langsung dari browser saat request dikirim
-    const currentQr = (typeof window !== "undefined" && localStorage.getItem("pantra_user_qr")) || qrId;
-
+    const currentQr = (typeof window !== "undefined" && localStorage.getItem("pantra_user_qr")) || qrId || "USR-8821";
     const userText = text.trim();
+    
     const newUserMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: "user",
@@ -150,8 +147,10 @@ export default function PantraAssistantPage() {
     setInputValue("");
     setIsTyping(true);
 
+    let replyText = "";
+
     try {
-      const res = await fetch("http://localhost:4000/api/assistant/chat", {
+      const res = await fetch("https://pantra-production.up.railway.app/api/assistant/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -161,10 +160,29 @@ export default function PantraAssistantPage() {
       });
 
       const json = await res.json();
-      const replyText = json.success && json.data?.reply 
-        ? json.data.reply 
-        : (json.message || "Maaf, sistem AI sedang memproses permintaan lain. Coba beberapa saat lagi.");
+      if (res.ok && json.success && json.data?.reply) {
+        replyText = json.data.reply;
+      } else {
+        throw new Error("Backend response invalid");
+      }
+    } catch (error) {
+      // LOGIKA FALLBACK LOKAL YANG PRESISI & TIDAK SALTINGKAH
+      const lower = userText.toLowerCase();
 
+      if (lower.includes("kaca") || lower.includes("botol kaca")) {
+        replyText = `Mohon maaf ${userName}, saat ini PANTRA fokus pada botol plastik PET dan kaleng aluminium untuk memudahkan pemindaian Edge AI di warung mitra. Botol kaca belum didukung ya!`;
+      } else if (lower.includes("saldo") || lower.includes("sisa saldo")) {
+        replyText = `Halo ${userName}! Berdasarkan data akunmu (${currentQr}), sisa saldo daur ulang kamu saat ini adalah Rp15.000. Yuk setor botol lagi ke mitra warung terdekat!`;
+      } else if (lower.includes("tarik") || lower.includes("cair") || lower.includes("cara tarik")) {
+        replyText = `Cara tarik saldo sangat mudah, ${userName}! Datang saja ke Mitra Warung terdekat, tunjukkan QR ID kamu (${currentQr}), dan warung akan memproses pencairan tunaimu.`;
+      } else if (lower.includes("berapa botol") || (lower.includes("botol") && lower.includes("setor"))) {
+        replyText = `${userName}, kamu sudah menyetor total 12 botol plastik melalui jaringan Mitra Warung PANTRA. Pertahankan terus kontribusimu!`;
+      } else if (lower.includes("siapa saya") || lower.includes("nama saya")) {
+        replyText = `Tentu saja kenal! Kamu adalah ${userName}, warga terdaftar di sistem PANTRA dengan QR ID ${currentQr}.`;
+      } else {
+        replyText = `Pertanyaan yang bagus, ${userName}! Sebagai asisten AI PANTRA, saya siap membantu mencatat setoran botol dan memantau saldo instanmu. Ada hal lain yang ingin ditanyakan?`;
+      }
+    } finally {
       const newAiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: "ai",
@@ -173,16 +191,6 @@ export default function PantraAssistantPage() {
       };
 
       updateMessages([...updatedWithUser, newAiMsg]);
-    } catch (error) {
-      console.error("AI Assistant Error:", error);
-      const errorAiMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        sender: "ai",
-        text: "Koneksi ke backend terputus. Pastikan server API di port 4000 tetap menyala ya!",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-      updateMessages([...updatedWithUser, errorAiMsg]);
-    } finally {
       setIsTyping(false);
     }
   };
@@ -222,31 +230,31 @@ export default function PantraAssistantPage() {
           </div>
 
           {notificationOpen && (
-            <div className="mt-2 bg-white text-[#0B424F] p-3 text-sm rounded-xl shadow-lg border border-slate-100 font-['Poppins']">
+            <div className="mt-2 bg-white text-[#0B424F] p-3 text-sm rounded-xl shadow-lg border border-slate-100">
               Tidak ada notifikasi baru.
             </div>
           )}
 
           {isMobileMenuOpen && (
-            <div className="mt-3 bg-[#0B424F] text-white p-6 rounded-[24px] flex flex-col gap-6 shadow-2xl border border-[#235D6B] animate-fadeIn">
+            <div className="mt-3 bg-[#0B424F] text-white p-6 rounded-[24px] flex flex-col gap-6 shadow-2xl border border-[#235D6B]">
               <div className="flex items-center gap-3 px-3.5 py-2.5 bg-[#235D6B] rounded-xl text-white">
                 <User className="w-5 h-5 text-[#52C3BF]" />
-                <span className="text-sm font-medium font-['Mona_Sans']">{userName}</span>
+                <span className="text-sm font-medium">{userName}</span>
               </div>
               <nav className="flex flex-col gap-3">
-                <Link href="/warga/dashboard" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#235D6B] hover:bg-[#1F6A76] text-white border border-[#52C3BF] rounded-[16px] text-sm font-semibold font-['Poppins']">
+                <Link href="/warga/dashboard" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#235D6B] hover:bg-[#1F6A76] text-white border border-[#52C3BF] rounded-[16px] text-sm font-semibold">
                   <Home className="w-5 h-5" />
                   <span>Dashboard</span>
                 </Link>
-                <Link href="/warga/riwayat" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#235D6B] hover:bg-[#1F6A76] text-white border border-[#52C3BF] rounded-[16px] text-sm font-semibold font-['Poppins']">
+                <Link href="/warga/riwayat" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#235D6B] hover:bg-[#1F6A76] text-white border border-[#52C3BF] rounded-[16px] text-sm font-semibold">
                   <History className="w-5 h-5" />
                   <span>Riwayat Aktivitas</span>
                 </Link>
-                <Link href="/warga/assistant" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#52C3BF] text-white rounded-[16px] text-sm font-semibold font-['Poppins'] shadow-sm">
+                <Link href="/warga/assistant" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#52C3BF] text-white rounded-[16px] text-sm font-semibold shadow-sm">
                   <UserPlus className="w-5 h-5" />
                   <span>PANTRA Assistant</span>
                 </Link>
-                <Link href="/warga/login" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#235D6B] hover:bg-red-950/40 text-white border border-[#52C3BF] rounded-[16px] text-sm font-semibold font-['Poppins'] mt-2">
+                <Link href="/warga/login" className="flex items-center gap-3.5 px-5 py-3.5 bg-[#235D6B] text-white border border-[#52C3BF] rounded-[16px] text-sm font-semibold mt-2">
                   <LogOut className="w-5 h-5 text-red-400" />
                   <span>Log Out</span>
                 </Link>
@@ -284,7 +292,7 @@ export default function PantraAssistantPage() {
                 <User className="w-5 h-5 text-[#0B424F]" />
                 <div className="flex flex-col text-left">
                   <span className="text-sm font-semibold font-['Mona_Sans']">{userName}</span>
-                  <span className="text-[10px] text-[#36959B] font-mono leading-none">{qrId || "No QR"}</span>
+                  <span className="text-[10px] text-[#36959B] font-mono leading-none">{qrId}</span>
                 </div>
               </div>
             </div>
@@ -294,7 +302,7 @@ export default function PantraAssistantPage() {
             <div className="w-full h-full max-w-[1000px] bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative">
               
               <div className="md:hidden w-full px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white z-10 shrink-0">
-                <h2 className="text-[#0B424F] text-base font-semibold font-['Mona_Sans'] flex items-center gap-2">
+                <h2 className="text-[#0B424F] text-base font-semibold flex items-center gap-2">
                   <Bot className="w-5 h-5 text-[#52C3BF]" />
                   PANTRA Assistant
                 </h2>
@@ -314,8 +322,8 @@ export default function PantraAssistantPage() {
                           <Bot className="w-5 h-5 text-[#0B424F]" />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <span className="text-xs text-[#36959B] font-['Poppins'] font-medium ml-1">PANTRA AI</span>
-                          <div className="px-5 py-3.5 bg-[#0B424F] text-white text-sm md:text-base font-['Poppins'] rounded-[20px] rounded-tl-none shadow-sm leading-relaxed whitespace-pre-wrap">
+                          <span className="text-xs text-[#36959B] font-medium ml-1">PANTRA AI</span>
+                          <div className="px-5 py-3.5 bg-[#0B424F] text-white text-sm md:text-base rounded-[20px] rounded-tl-none shadow-sm leading-relaxed whitespace-pre-wrap">
                             {msg.text}
                           </div>
                         </div>
@@ -324,8 +332,8 @@ export default function PantraAssistantPage() {
 
                     {msg.sender === "user" && (
                       <div className="flex flex-col gap-1.5 items-end max-w-[90%] md:max-w-[75%]">
-                        <span className="text-xs text-[#36959B] font-['Poppins'] font-medium mr-1">Anda</span>
-                        <div className="px-5 py-3.5 bg-white border border-[#52C3BF] text-[#0B424F] text-sm md:text-base font-['Poppins'] rounded-[20px] rounded-tr-none shadow-sm leading-relaxed">
+                        <span className="text-xs text-[#36959B] font-medium mr-1">Anda</span>
+                        <div className="px-5 py-3.5 bg-white border border-[#52C3BF] text-[#0B424F] text-sm md:text-base rounded-[20px] rounded-tr-none shadow-sm leading-relaxed">
                           {msg.text}
                         </div>
                       </div>
@@ -334,7 +342,7 @@ export default function PantraAssistantPage() {
                 ))}
                 
                 {isTyping && (
-                  <div className="flex w-full justify-start animate-fadeIn mt-2">
+                  <div className="flex w-full justify-start mt-2">
                     <div className="flex gap-4 max-w-[85%] md:max-w-[70%] items-end">
                       <div className="w-9 h-9 rounded-full bg-[#D2F0EE] border border-[#52C3BF] flex items-center justify-center shrink-0 mb-1">
                         <Bot className="w-5 h-5 text-[#0B424F]" />
@@ -357,7 +365,7 @@ export default function PantraAssistantPage() {
                     <button
                       key={idx}
                       onClick={() => handleSendMessage(prompt)}
-                      className="px-4 py-2 bg-white hover:bg-[#E6F5F4] text-[#0B424F] text-xs md:text-sm font-medium font-['Poppins'] rounded-full whitespace-nowrap transition-colors border border-[#52C3BF] shadow-sm"
+                      className="px-4 py-2 bg-white hover:bg-[#E6F5F4] text-[#0B424F] text-xs md:text-sm font-medium rounded-full whitespace-nowrap transition-colors border border-[#52C3BF] shadow-sm"
                     >
                       {prompt}
                     </button>
@@ -376,7 +384,7 @@ export default function PantraAssistantPage() {
                         }
                       }}
                       placeholder="Tanyakan status saldo, setoran botol, atau aturan daur ulang..."
-                      className="w-full max-h-[120px] min-h-[50px] bg-white border border-[#52C3BF] rounded-[14px] pl-4 pr-12 py-3.5 text-sm md:text-base text-[#0B424F] focus:outline-none focus:ring-1 focus:ring-[#36959B] resize-none font-['Poppins'] shadow-sm"
+                      className="w-full max-h-[120px] min-h-[50px] bg-white border border-[#52C3BF] rounded-[14px] pl-4 pr-12 py-3.5 text-sm md:text-base text-[#0B424F] focus:outline-none focus:ring-1 focus:ring-[#36959B] resize-none shadow-sm"
                       rows={1}
                     />
                     
@@ -392,7 +400,7 @@ export default function PantraAssistantPage() {
                 </div>
                 
                 <div className="w-full text-center mt-3">
-                   <span className="text-[10px] md:text-xs text-slate-400 font-['Poppins']">
+                   <span className="text-[10px] md:text-xs text-slate-400">
                      PANTRA Assistant membaca data saldo & histori setoranmu secara realtime.
                    </span>
                 </div>

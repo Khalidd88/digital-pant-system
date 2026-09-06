@@ -74,7 +74,7 @@ export default function WarungDompetPage() {
     if (!currentWarungId) return;
     setLoadingBalance(true);
     try {
-      const res = await fetch(`http://localhost:4000/api/user/${currentWarungId}`, { cache: "no-store" });
+      const res = await fetch(`https://pantra-production.up.railway.app/api/user/${currentWarungId}`, { cache: "no-store" });
       const json = await res.json();
       if (json.success && json.data) {
         setBalance(json.data.balance || 0);
@@ -108,7 +108,7 @@ export default function WarungDompetPage() {
     setFeedbackAlert(null);
 
     try {
-      const res = await fetch("http://localhost:4000/api/wallet/topup", {
+      const res = await fetch("https://pantra-production.up.railway.app/api/wallet/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -154,7 +154,7 @@ export default function WarungDompetPage() {
 
     setIsSubmittingSettle(true);
     try {
-      const res = await fetch("http://localhost:4000/api/wallet/withdraw", {
+      const res = await fetch("https://pantra-production.up.railway.app/api/wallet/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

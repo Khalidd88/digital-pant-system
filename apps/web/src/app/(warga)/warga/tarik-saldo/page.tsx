@@ -61,7 +61,7 @@ export default function TarikSaldoPage() {
     if (!targetQr) return;
     setLoadingBalance(true);
     try {
-      const res = await fetch(`http://localhost:4000/api/user/${targetQr}`, {
+      const res = await fetch(`https://pantra-production.up.railway.app/api/user/${targetQr}`, {
         cache: "no-store",
       });
       const json = await res.json();
@@ -130,7 +130,7 @@ export default function TarikSaldoPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("http://localhost:4000/api/wallet/withdraw", {
+      const res = await fetch("https://pantra-production.up.railway.app/api/wallet/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

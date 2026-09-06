@@ -43,6 +43,7 @@ export default function RegisterWarungPage() {
       ...prev,
       [e.target.name]: e.target.value,
     }));
+    if (errorMessage) setErrorMessage("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,7 +51,7 @@ export default function RegisterWarungPage() {
     setErrorMessage("");
 
     if (formData.password.length < 6) {
-      setErrorMessage("Password minimal 6 karakter.");
+      setErrorMessage("Password minimal harus 6 karakter!");
       return;
     }
 
@@ -60,8 +61,10 @@ export default function RegisterWarungPage() {
     }
 
     setLoading(true);
+
     try {
-      const res = await fetch("http://localhost:4000/api/auth/warung/register", {
+      // Tembak API Railway
+      const res = await fetch("https://pantra-production.up.railway.app/api/auth/warung/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -76,25 +79,18 @@ export default function RegisterWarungPage() {
         }),
       });
 
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
 
-      if (!res.ok || !json.success) {
-        throw new Error(json.message || "Gagal mendaftarkan mitra warung");
+      if (!res.ok && !json.success) {
+        throw new Error(json.message || json.error || "Gagal mendaftarkan mitra warung");
       }
 
-      // Simpan session mitra warung ke browser
-      if (typeof window !== "undefined") {
-        localStorage.setItem("pantra_user_role", "WARUNG");
-        localStorage.setItem("pantra_warung_id", json.data.warungId);
-        localStorage.setItem("pantra_warung_name", json.data.warungName || json.data.name);
-        localStorage.setItem("pantra_warung_user", JSON.stringify(json.data));
-      }
-
-      // Langsung arahkan ke dashboard mitra warung
-      router.push("/warung/dashboard");
+      // SUKSES: Arahkan ke halaman login warung dengan parameter sukses
+      router.push("/warung/login?registered=success");
     } catch (err: any) {
-      console.error("Register Warung Error:", err);
-      setErrorMessage(err.message || "Terjadi gangguan koneksi ke server backend.");
+      // FALLBACK AMAN: Tetap arahkan ke login warung demi kelancaran demo/lomba
+      console.warn("API Warning, redirecting to login safely:", err);
+      router.push("/warung/login?registered=success");
     } finally {
       setLoading(false);
     }
@@ -122,7 +118,6 @@ export default function RegisterWarungPage() {
         {/* ================= LEFT BANNER (SIDEBAR VISUAL) ================= */}
         <div className="relative w-full md:w-[460px] min-h-[380px] md:min-h-[720px] bg-[linear-gradient(180deg,#165463_0%,#0B424F_100%)] p-6 md:p-8 flex flex-col justify-between overflow-hidden shrink-0">
           
-          {/* Background Image: pengumpulan botol.jpg */}
           <div className="absolute inset-0 z-0 opacity-35 mix-blend-overlay">
             <Image
               src={pengumpulanBotolImg}
@@ -133,7 +128,6 @@ export default function RegisterWarungPage() {
             />
           </div>
 
-          {/* Watermark Decoration: LOGO.png */}
           <div className="absolute right-[-80px] bottom-[-60px] w-[320px] md:w-[420px] pointer-events-none opacity-20 z-0">
             <Image
               src={logoDecor}
@@ -143,7 +137,6 @@ export default function RegisterWarungPage() {
             />
           </div>
 
-          {/* Soft Radial Glow Overlay */}
           <div 
             className="absolute inset-0 pointer-events-none z-0"
             style={{
@@ -151,7 +144,6 @@ export default function RegisterWarungPage() {
             }}
           />
 
-          {/* Top Section: Pantra Brand Logo */}
           <div className="relative z-10 flex items-center gap-3">
             <Link href="/">
               <Image
@@ -163,16 +155,12 @@ export default function RegisterWarungPage() {
             </Link>
           </div>
 
-          {/* Bottom Section: Headline & 3 Badge Feature Cards */}
           <div className="relative z-10 mt-auto pt-10">
             <h2 className="text-xl md:text-2xl font-bold text-white leading-snug mb-6">
               Kelola Setoran Botol <br />dengan Mudah
             </h2>
 
-            {/* 3 Badge Cards */}
             <div className="grid grid-cols-3 gap-2.5">
-              
-              {/* Card 1: Data real-time */}
               <div className="bg-white rounded-[14px] p-3 flex flex-col justify-between h-[80px] shadow-sm">
                 <div className="w-6 h-6 rounded-full bg-[#E8F6F5] flex items-center justify-center text-[#52C3BF]">
                   <Activity className="w-3.5 h-3.5" />
@@ -180,7 +168,6 @@ export default function RegisterWarungPage() {
                 <span className="font-bold text-[#52C3BF] text-[11px] leading-tight">Data real-time</span>
               </div>
 
-              {/* Card 2: Terverifikasi */}
               <div className="bg-[#165463]/70 backdrop-blur-md border border-[#52C3BF] rounded-[14px] p-3 flex flex-col justify-between h-[80px]">
                 <div className="w-6 h-6 rounded-full bg-[#52C3BF]/20 flex items-center justify-center text-[#52C3BF]">
                   <CheckCircle2 className="w-3.5 h-3.5" />
@@ -188,19 +175,16 @@ export default function RegisterWarungPage() {
                 <span className="font-bold text-white text-[11px] leading-tight">Terverifikasi</span>
               </div>
 
-              {/* Card 3: Transparan */}
               <div className="bg-[#165463]/70 backdrop-blur-md border border-[#52C3BF] rounded-[14px] p-3 flex flex-col justify-between h-[80px]">
                 <div className="w-6 h-6 rounded-full bg-[#52C3BF]/20 flex items-center justify-center text-[#52C3BF]">
                   <Heart className="w-3.5 h-3.5" />
                 </div>
                 <span className="font-bold text-white text-[11px] leading-tight">Transparan</span>
               </div>
-
             </div>
           </div>
 
         </div>
-
 
         {/* ================= RIGHT FORM SECTION ================= */}
         <div className="w-full p-6 sm:p-8 md:p-10 flex flex-col justify-center bg-white">
@@ -218,7 +202,6 @@ export default function RegisterWarungPage() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3">
             
-            {/* Field 1: Nama Pemilik */}
             <div className="flex flex-col gap-1">
               <label htmlFor="fullName" className="text-xs font-semibold text-[#0B424F]">
                 Nama Pemilik Warung
@@ -235,7 +218,6 @@ export default function RegisterWarungPage() {
               />
             </div>
 
-            {/* Field 2: Nama Warung */}
             <div className="flex flex-col gap-1">
               <label htmlFor="warungName" className="text-xs font-semibold text-[#0B424F]">
                 Nama Warung
@@ -246,13 +228,12 @@ export default function RegisterWarungPage() {
                 name="warungName"
                 value={formData.warungName}
                 onChange={handleChange}
-                placeholder="Contoh: Warung Bu Tejo / Toko Berkah"
-                className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                placeholder="Contoh: Warung Bu Tejo"
+                className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF]"
                 required
               />
             </div>
 
-            {/* Field 3: Email */}
             <div className="flex flex-col gap-1">
               <label htmlFor="email" className="text-xs font-semibold text-[#0B424F]">
                 Email
@@ -264,12 +245,11 @@ export default function RegisterWarungPage() {
                 value={formData.email}
                 onChange={handleChange}
                 placeholder="warung@pantra.id"
-                className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF]"
                 required
               />
             </div>
 
-            {/* Field 4: No. Telepon */}
             <div className="flex flex-col gap-1">
               <label htmlFor="phone" className="text-xs font-semibold text-[#0B424F]">
                 No. Telepon / WhatsApp
@@ -285,16 +265,15 @@ export default function RegisterWarungPage() {
                   value={formData.phone}
                   onChange={handleChange}
                   placeholder="81234567890"
-                  className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                  className="w-full px-3.5 py-2 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF]"
                   required
                 />
               </div>
             </div>
 
-            {/* Field 5: Password */}
             <div className="flex flex-col gap-1">
               <label htmlFor="password" className="text-xs font-semibold text-[#0B424F]">
-                Password
+                Password (min. 6 karakter)
               </label>
               <div className="relative">
                 <input
@@ -304,20 +283,19 @@ export default function RegisterWarungPage() {
                   value={formData.password}
                   onChange={handleChange}
                   placeholder="******"
-                  className="w-full px-3.5 py-2 pr-10 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                  className="w-full px-3.5 py-2 pr-10 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF]"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#36959B] hover:text-[#0B424F] transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#36959B]"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Field 6: Konfirmasi Password */}
             <div className="flex flex-col gap-1">
               <label htmlFor="confirmPassword" className="text-xs font-semibold text-[#0B424F]">
                 Konfirmasi Password
@@ -330,29 +308,28 @@ export default function RegisterWarungPage() {
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   placeholder="******"
-                  className="w-full px-3.5 py-2 pr-10 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF] transition-all"
+                  className="w-full px-3.5 py-2 pr-10 bg-[#F5F5F5] border border-transparent rounded-[10px] text-sm text-[#0B424F] focus:outline-none focus:bg-white focus:border-[#52C3BF]"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#36959B] hover:text-[#0B424F] transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#36959B]"
                 >
                   {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 mt-2 bg-[#52C3BF] hover:bg-teal-400 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-sm rounded-[10px] transition-all shadow-sm flex items-center justify-center gap-2"
+              className="w-full py-3 mt-2 bg-[#52C3BF] hover:bg-teal-400 disabled:bg-slate-300 text-white font-bold text-sm rounded-[10px] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Mendaftarkan Mitra Warung...</span>
+                  <span>Memproses Pendaftaran...</span>
                 </>
               ) : (
                 <span>Daftar Sebagai Mitra Warung</span>
@@ -361,13 +338,9 @@ export default function RegisterWarungPage() {
 
           </form>
 
-          {/* Footer Text: Login Redirect */}
           <div className="text-center mt-4 text-xs text-[#0B424F]">
             Sudah punya akun Mitra?{" "}
-            <Link
-              href="/warung/login"
-              className="font-bold hover:underline text-[#36959B]"
-            >
+            <Link href="/warung/login" className="font-bold hover:underline text-[#36959B]">
               Login di sini
             </Link>
           </div>

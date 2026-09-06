@@ -117,7 +117,7 @@ export default function WarungDashboardPage() {
     if (!silent) setIsRefreshing(true);
 
     try {
-      const res = await fetch(`http://localhost:4000/api/user/${currentWarungId}`, {
+      const res = await fetch(`https://pantra-production.up.railway.app/api/user/${currentWarungId}`, {
         cache: "no-store",
       });
       const json = await res.json();
@@ -240,7 +240,7 @@ export default function WarungDashboardPage() {
 
     setSubmittingWithdraw(true);
     try {
-      const res = await fetch("http://localhost:4000/api/wallet/withdraw", {
+      const res = await fetch("https://pantra-production.up.railway.app/api/wallet/withdraw", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -282,7 +282,7 @@ export default function WarungDashboardPage() {
 
     setVerifyingBottle(true);
     try {
-      const res = await fetch("http://localhost:4000/api/scan/verify", {
+      const res = await fetch("https://pantra-production.up.railway.app/api/scan/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

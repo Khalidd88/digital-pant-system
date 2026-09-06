@@ -110,7 +110,7 @@ export default function VerifyWarungPage() {
         fileName: selectedFile.name,
       };
 
-      const res = await fetch("http://localhost:4000/api/auth/warung/verify", {
+      const res = await fetch("https://pantra-production.up.railway.app/api/auth/warung/verify", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

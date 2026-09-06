@@ -97,7 +97,7 @@ export default function WarungRiwayatPage() {
     if (!silent) setIsRefreshing(true);
 
     try {
-      const res = await fetch(`http://localhost:4000/api/user/${targetWarungId}`, {
+      const res = await fetch(`https://pantra-production.up.railway.app/api/user/${targetWarungId}`, {
         cache: "no-store",
       });
       const json = await res.json();
