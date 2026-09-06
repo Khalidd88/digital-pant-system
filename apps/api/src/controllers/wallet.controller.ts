@@ -51,7 +51,7 @@ export const handleWithdraw = async (req: Request, res: Response): Promise<void>
         ? 'Belanja sembako di Warung Bu Tejo'
         : `Tarik tunai ke ${cleanChannel} (${destinationNumber || 'Akun Utama'})`;
 
-   // Gunakan (prisma as any) agar TypeScript tidak mengunci compiler
+    // Gunakan (prisma as any) agar TypeScript tidak mengunci compiler jika model bernama walletTransaction / walletTransactions
     const [updatedUser, transaction] = await prisma.$transaction([
       prisma.user.update({
         where: { qrId },
@@ -85,12 +85,75 @@ export const handleWithdraw = async (req: Request, res: Response): Promise<void>
         createdAt: transaction.createdAt
       }
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Wallet Withdraw Error:', error);
+    const errMessage = error instanceof Error ? error.message : String(error);
     res.status(500).json({
       success: false,
       message: 'Gagal memproses penarikan saldo.',
-      error: error?.message || String(error)
+      error: errMessage
+    });
+  }
+};
+
+export const topupWallet = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { qrId, amount, channel } = req.body;
+
+    const numericAmount = Number(amount);
+    if (!qrId || isNaN(numericAmount) || numericAmount <= 0) {
+      res.status(400).json({
+        success: false,
+        message: 'QR ID dan nominal top-up valid wajib diisi.',
+      });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { qrId },
+    });
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        message: 'Pengguna/Warung dengan ID tersebut tidak ditemukan.',
+      });
+      return;
+    }
+
+    // Tambah saldo user & catat mutasi di walletTransactions
+    const updatedUser = await prisma.user.update({
+      where: { qrId },
+      data: {
+        balance: { increment: numericAmount },
+        walletTransactions: {
+          create: {
+            amount: numericAmount,
+            channel: channel || 'DEMO_QRIS',
+            description: `Top Up Saldo Kasir Warung (Simulasi Demo)`,
+            destinationNumber: 'KASIR_WARUNG',
+          },
+        },
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Top up kasir sebesar Rp${numericAmount.toLocaleString('id-ID')} berhasil diverifikasi!`,
+      data: {
+        warungId: updatedUser.qrId,
+        topupAmount: numericAmount,
+        newBalance: updatedUser.balance,
+        channel: channel || 'DEMO_QRIS',
+      },
+    });
+  } catch (error: unknown) {
+    console.error('Topup Error:', error);
+    const errMessage = error instanceof Error ? error.message : String(error);
+    res.status(500).json({
+      success: false,
+      message: 'Gagal memproses top up.',
+      error: errMessage,
     });
   }
 };

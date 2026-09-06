@@ -1,5 +1,6 @@
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import scanRoutes from './routes/scan.routes';
 import assistantRoutes from './routes/assistant.routes';
@@ -17,6 +18,7 @@ app.get('/', (_req: Request, res: Response) => {
     system: 'Digital Pant System (PANTRA) API',
     endpoints: {
       health: 'GET /health',
+      authLogin: 'POST /api/auth/login',
       getUser: 'GET /api/user/:qrId',
       verifyScan: 'POST /api/scan/verify',
       impactAnalytics: 'GET /api/analytics/impact',
@@ -30,6 +32,8 @@ app.get('/health', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'online', system: 'Digital Pant System Backend' });
 });
 
+// Register Routes
+app.use('/api/auth', authRoutes);
 app.use('/api', userRoutes);
 app.use('/api', scanRoutes);
 app.use('/api', assistantRoutes);
